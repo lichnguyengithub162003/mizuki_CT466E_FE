@@ -16,7 +16,8 @@ describe('foundation router', () => {
     await router.push('/')
     await router.isReady()
     await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('Mizuki')
+    expect(wrapper.get('h1').text()).toBe('Mizuki foundation')
+    expect(wrapper.findAll('[data-token-section]')).toHaveLength(7)
 
     await router.push('/forbidden')
     await flushPromises()
