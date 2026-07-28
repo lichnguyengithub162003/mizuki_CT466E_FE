@@ -22,6 +22,7 @@ import BaseToastProvider from '@/components/common/BaseToastProvider.vue'
 import BaseTooltip from '@/components/common/BaseTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
+import FeedbackStatesDemo from '@/components/feedback/FeedbackStatesDemo.vue'
 import FormFoundationDemo from '@/components/form/FormFoundationDemo.vue'
 import { ROUTE_PATHS } from '@/constants/routes'
 
@@ -100,11 +101,11 @@ const radioOptions = [
     <header class="bg-primary text-primary-foreground">
       <div class="app-container section-spacing">
         <p class="text-caption uppercase tracking-[0.2em] text-primary-foreground/80">
-          F2c · Form foundation
+          F2d · Shared feedback and data states
         </p>
         <h1 class="text-display-xl mt-4 max-w-3xl text-primary-foreground">Mizuki foundation</h1>
         <p class="text-body-lg mt-5 max-w-2xl text-primary-foreground/85">
-          Trang kiểm tra trực quan cho design tokens, common components, motion và form foundation tái sử dụng của Mizuki.
+          Trang kiểm tra trực quan cho design tokens, common components, form và shared feedback states tái sử dụng của Mizuki.
         </p>
       </div>
     </header>
@@ -430,6 +431,19 @@ const radioOptions = [
             description="Kết nối đang gián đoạn. Vui lòng thử lại."
           />
         </div>
+      </section>
+
+      <section class="section-spacing border-t border-border" data-component-section="feedback-data-states">
+        <div class="mb-8 max-w-3xl">
+          <p class="text-caption uppercase tracking-[0.16em] text-muted-foreground">
+            Shared feedback
+          </p>
+          <h2 class="text-heading-2 mt-2">Shared feedback and data states</h2>
+          <p class="text-body-md mt-3 text-muted-foreground">
+            Mô phỏng loading, refreshing, empty, error và phản hồi thao tác bằng local state; không thực hiện network request.
+          </p>
+        </div>
+        <FeedbackStatesDemo />
       </section>
 
       <section class="section-spacing border-t border-border" data-component-section="form-foundation">
