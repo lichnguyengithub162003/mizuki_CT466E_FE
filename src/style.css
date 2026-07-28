@@ -76,10 +76,15 @@
   --shadow-lg: 0 24px 56px rgba(16, 28, 19, 0.12);
 
   /* Motion */
-  --duration-fast: 120ms;
-  --duration-normal: 180ms;
-  --duration-slow: 240ms;
+  --duration-instant: 90ms;
+  --duration-fast: 150ms;
+  --duration-normal: 240ms;
+  --duration-slow: 360ms;
+  --duration-emphasis: 480ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Layout */
   --container-wide: 90rem;
@@ -382,13 +387,257 @@
   }
 }
 
+@keyframes mizuki-motion-enter {
+  from {
+    opacity: var(--motion-from-opacity, 1);
+    transform: var(--motion-from-transform, none);
+  }
+}
+
+@keyframes mizuki-motion-exit {
+  to {
+    opacity: var(--motion-to-opacity, 1);
+    transform: var(--motion-to-transform, none);
+  }
+}
+
+@keyframes mizuki-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+
+  50% {
+    opacity: 0.94;
+  }
+}
+
+@layer components {
+  .motion-interactive {
+    transition-property: background-color, border-color, color, box-shadow, transform;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-standard);
+  }
+
+  .motion-interactive:not(:disabled):hover {
+    box-shadow: var(--shadow-xs);
+  }
+
+  .motion-interactive:not(:disabled):active {
+    transform: scale(0.99);
+    transition-duration: var(--duration-instant);
+  }
+
+  .motion-interactive:disabled {
+    transform: none;
+  }
+
+  .motion-state-colors {
+    transition-property: background-color, border-color, color, box-shadow;
+    transition-duration: 200ms;
+    transition-timing-function: var(--ease-standard);
+  }
+
+  .motion-indicator {
+    transform-origin: center;
+    animation: mizuki-motion-enter 200ms var(--ease-emphasized) both;
+    --motion-from-opacity: 0;
+    --motion-from-transform: scale(0.92);
+  }
+
+  .motion-switch-thumb {
+    transition: transform 200ms var(--ease-emphasized);
+  }
+
+  .motion-skeleton {
+    animation: mizuki-skeleton-pulse 2.2s var(--ease-standard) infinite;
+  }
+
+  .motion-overlay[data-state='open'] {
+    animation: mizuki-motion-enter var(--duration-normal) var(--ease-enter) both;
+    --motion-from-opacity: 0;
+  }
+
+  .motion-overlay[data-state='closed'] {
+    animation: mizuki-motion-exit 200ms var(--ease-exit) both;
+    --motion-to-opacity: 0;
+  }
+
+  .motion-tooltip {
+    transform-origin: var(--reka-tooltip-content-transform-origin);
+  }
+
+  .motion-tooltip[data-state='delayed-open'],
+  .motion-tooltip[data-state='instant-open'] {
+    animation: mizuki-motion-enter var(--duration-fast) var(--ease-enter) both;
+    --motion-from-opacity: 0;
+    --motion-from-transform: scale(0.985);
+  }
+
+  .motion-tooltip[data-state='closed'] {
+    animation: mizuki-motion-exit 120ms var(--ease-exit) both;
+    --motion-to-opacity: 0;
+    --motion-to-transform: scale(0.985);
+  }
+
+  .motion-tooltip[data-side='top'] {
+    --motion-from-transform: translateY(0.25rem) scale(0.985);
+    --motion-to-transform: translateY(0.25rem) scale(0.985);
+  }
+
+  .motion-tooltip[data-side='right'] {
+    --motion-from-transform: translateX(-0.25rem) scale(0.985);
+    --motion-to-transform: translateX(-0.25rem) scale(0.985);
+  }
+
+  .motion-tooltip[data-side='bottom'] {
+    --motion-from-transform: translateY(-0.25rem) scale(0.985);
+    --motion-to-transform: translateY(-0.25rem) scale(0.985);
+  }
+
+  .motion-tooltip[data-side='left'] {
+    --motion-from-transform: translateX(0.25rem) scale(0.985);
+    --motion-to-transform: translateX(0.25rem) scale(0.985);
+  }
+
+  .motion-popover {
+    transform-origin: var(--reka-popover-content-transform-origin);
+  }
+
+  .motion-popover[data-state='open'] {
+    animation: mizuki-motion-enter var(--duration-normal) var(--ease-enter) both;
+    --motion-from-opacity: 0;
+  }
+
+  .motion-popover[data-state='closed'] {
+    animation: mizuki-motion-exit var(--duration-fast) var(--ease-exit) both;
+    --motion-to-opacity: 0;
+  }
+
+  .motion-popover[data-side='top'] {
+    --motion-from-transform: translateY(0.375rem) scale(0.98);
+    --motion-to-transform: translateY(0.375rem) scale(0.98);
+  }
+
+  .motion-popover[data-side='right'] {
+    --motion-from-transform: translateX(-0.375rem) scale(0.98);
+    --motion-to-transform: translateX(-0.375rem) scale(0.98);
+  }
+
+  .motion-popover[data-side='bottom'] {
+    --motion-from-transform: translateY(-0.375rem) scale(0.98);
+    --motion-to-transform: translateY(-0.375rem) scale(0.98);
+  }
+
+  .motion-popover[data-side='left'] {
+    --motion-from-transform: translateX(0.375rem) scale(0.98);
+    --motion-to-transform: translateX(0.375rem) scale(0.98);
+  }
+
+  .motion-dialog[data-state='open'] {
+    animation: mizuki-motion-enter var(--duration-slow) var(--ease-enter) both;
+    --motion-from-opacity: 0;
+    --motion-from-transform: translate(-50%, calc(-50% + 0.625rem)) scale(0.97);
+  }
+
+  .motion-dialog[data-state='closed'] {
+    animation: mizuki-motion-exit var(--duration-normal) var(--ease-exit) both;
+    --motion-to-opacity: 0;
+    --motion-to-transform: translate(-50%, calc(-50% + 0.5rem)) scale(0.97);
+  }
+
+  .motion-drawer-left[data-state='open'],
+  .motion-drawer-right[data-state='open'],
+  .motion-sheet[data-state='open'] {
+    animation: mizuki-motion-enter var(--duration-slow) var(--ease-emphasized) both;
+    --motion-from-opacity: 1;
+  }
+
+  .motion-drawer-left[data-state='closed'],
+  .motion-drawer-right[data-state='closed'],
+  .motion-sheet[data-state='closed'] {
+    animation: mizuki-motion-exit 300ms var(--ease-exit) both;
+    --motion-to-opacity: 1;
+  }
+
+  .motion-sheet[data-state='open'] {
+    animation-duration: 420ms;
+  }
+
+  .motion-drawer-left {
+    --motion-from-transform: translateX(-100%);
+    --motion-to-transform: translateX(-100%);
+  }
+
+  .motion-drawer-right {
+    --motion-from-transform: translateX(100%);
+    --motion-to-transform: translateX(100%);
+  }
+
+  .motion-sheet {
+    --motion-from-transform: translateY(100%);
+    --motion-to-transform: translateY(100%);
+  }
+
+  .motion-toast-enter-active,
+  .motion-toast-leave-active {
+    transition:
+      opacity 300ms var(--ease-enter),
+      transform 300ms var(--ease-emphasized);
+  }
+
+  .motion-toast-leave-active {
+    transition-duration: 200ms;
+    transition-timing-function: var(--ease-exit);
+  }
+
+  .motion-toast-move {
+    transition: transform var(--duration-slow) var(--ease-emphasized);
+  }
+
+  .motion-toast-enter-from,
+  .motion-toast-leave-to {
+    opacity: 0;
+    transform: translateY(-1rem) scale(0.99);
+  }
+
+  @media (min-width: 40rem) {
+    .motion-sheet {
+      --motion-from-transform: translate(-50%, 100%);
+      --motion-to-transform: translate(-50%, 100%);
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
+    animation-duration: var(--duration-instant) !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: var(--duration-instant) !important;
+  }
+
+  .motion-skeleton,
+  .motion-overlay,
+  .motion-tooltip,
+  .motion-popover,
+  .motion-dialog,
+  .motion-drawer-left,
+  .motion-drawer-right,
+  .motion-sheet,
+  .motion-indicator {
+    animation: none !important;
+  }
+
+  .motion-interactive:not(:disabled):active,
+  .motion-toast-enter-active,
+  .motion-toast-leave-active,
+  .motion-toast-move,
+  .motion-toast-enter-from,
+  .motion-toast-leave-to {
+    opacity: 1;
+    transform: none;
   }
 }
