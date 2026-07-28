@@ -8,12 +8,14 @@ const props = withDefaults(
     id?: string
     label: string
     description?: string
+    error?: string
     disabled?: boolean
     class?: string
   }>(),
   {
     id: undefined,
     description: undefined,
+    error: undefined,
     disabled: false,
     class: undefined,
   },
@@ -23,6 +25,12 @@ const model = defineModel<boolean>({ default: false })
 const generatedId = useId()
 const switchId = computed(() => props.id ?? generatedId)
 const descriptionId = computed(() => `${switchId.value}-description`)
+const errorId = computed(() => `${switchId.value}-error`)
+const describedBy = computed(() =>
+  [props.description ? descriptionId.value : '', props.error ? errorId.value : '']
+    .filter(Boolean)
+    .join(' ') || undefined,
+)
 </script>
 
 <template>
@@ -32,12 +40,16 @@ const descriptionId = computed(() => `${switchId.value}-description`)
       <p v-if="props.description" :id="descriptionId" class="text-caption text-muted-foreground">
         {{ props.description }}
       </p>
+      <p v-if="props.error" :id="errorId" class="text-caption text-destructive" role="alert">
+        <span class="sr-only">Lỗi: </span>{{ props.error }}
+      </p>
     </div>
     <SwitchRoot
       :id="switchId"
       v-model="model"
       :disabled="props.disabled"
-      :aria-describedby="props.description ? descriptionId : undefined"
+      :aria-invalid="Boolean(props.error)"
+      :aria-describedby="describedBy"
       class="motion-state-colors relative h-6 w-11 shrink-0 rounded-pill bg-border outline-none data-[state=checked]:bg-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
     >
       <SwitchThumb

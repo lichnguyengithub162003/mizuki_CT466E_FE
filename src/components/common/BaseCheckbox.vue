@@ -11,6 +11,7 @@ const props = withDefaults(
     id?: string
     label: string
     description?: string
+    error?: string
     disabled?: boolean
     required?: boolean
     class?: string
@@ -18,6 +19,7 @@ const props = withDefaults(
   {
     id: undefined,
     description: undefined,
+    error: undefined,
     disabled: false,
     required: false,
     class: undefined,
@@ -28,6 +30,12 @@ const model = defineModel<CheckboxValue>({ default: false })
 const generatedId = useId()
 const checkboxId = computed(() => props.id ?? generatedId)
 const descriptionId = computed(() => `${checkboxId.value}-description`)
+const errorId = computed(() => `${checkboxId.value}-error`)
+const describedBy = computed(() =>
+  [props.description ? descriptionId.value : '', props.error ? errorId.value : '']
+    .filter(Boolean)
+    .join(' ') || undefined,
+)
 </script>
 
 <template>
@@ -37,7 +45,8 @@ const descriptionId = computed(() => `${checkboxId.value}-description`)
       v-model="model"
       :disabled="props.disabled"
       :required="props.required"
-      :aria-describedby="props.description ? descriptionId : undefined"
+      :aria-invalid="Boolean(props.error)"
+      :aria-describedby="describedBy"
       class="motion-state-colors mt-0.5 grid size-5 shrink-0 place-items-center rounded-xs border border-input bg-surface text-primary-foreground shadow-xs outline-none data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
     >
       <CheckboxIndicator class="motion-indicator grid place-items-center">
@@ -52,6 +61,9 @@ const descriptionId = computed(() => `${checkboxId.value}-description`)
       </label>
       <p v-if="props.description" :id="descriptionId" class="text-caption text-muted-foreground">
         {{ props.description }}
+      </p>
+      <p v-if="props.error" :id="errorId" class="text-caption text-destructive" role="alert">
+        <span class="sr-only">Lỗi: </span>{{ props.error }}
       </p>
     </div>
   </div>

@@ -15,6 +15,7 @@ const props = withDefaults(
     placeholder?: string
     name?: string
     autocomplete?: string
+    inputmode?: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
     disabled?: boolean
     required?: boolean
     class?: string
@@ -28,6 +29,7 @@ const props = withDefaults(
     placeholder: undefined,
     name: undefined,
     autocomplete: undefined,
+    inputmode: undefined,
     disabled: false,
     required: false,
     class: undefined,
@@ -83,6 +85,7 @@ function handleInput(event: Event): void {
         :name="props.name"
         :placeholder="props.placeholder"
         :autocomplete="props.autocomplete"
+        :inputmode="props.inputmode"
         :disabled="props.disabled"
         :required="props.required"
         :aria-invalid="Boolean(props.error)"

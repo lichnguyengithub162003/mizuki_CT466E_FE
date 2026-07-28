@@ -22,6 +22,7 @@ import BaseToastProvider from '@/components/common/BaseToastProvider.vue'
 import BaseTooltip from '@/components/common/BaseTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
+import FormFoundationDemo from '@/components/form/FormFoundationDemo.vue'
 import { ROUTE_PATHS } from '@/constants/routes'
 
 const primaryScale = [
@@ -99,11 +100,11 @@ const radioOptions = [
     <header class="bg-primary text-primary-foreground">
       <div class="app-container section-spacing">
         <p class="text-caption uppercase tracking-[0.2em] text-primary-foreground/80">
-          F2b.2 · Apple-inspired motion refinement
+          F2c · Form foundation
         </p>
         <h1 class="text-display-xl mt-4 max-w-3xl text-primary-foreground">Mizuki foundation</h1>
         <p class="text-body-lg mt-5 max-w-2xl text-primary-foreground/85">
-          Trang kiểm tra trực quan cho design tokens, common components và motion tái sử dụng của Mizuki.
+          Trang kiểm tra trực quan cho design tokens, common components, motion và form foundation tái sử dụng của Mizuki.
         </p>
       </div>
     </header>
@@ -428,6 +429,21 @@ const radioOptions = [
             title="Không tải được dữ liệu"
             description="Kết nối đang gián đoạn. Vui lòng thử lại."
           />
+        </div>
+      </section>
+
+      <section class="section-spacing border-t border-border" data-component-section="form-foundation">
+        <div class="mb-8 max-w-3xl">
+          <p class="text-caption uppercase tracking-[0.16em] text-muted-foreground">
+            VeeValidate · Zod
+          </p>
+          <h2 class="text-heading-2 mt-2">Form foundation</h2>
+          <p class="text-body-md mt-3 text-muted-foreground">
+            Biểu mẫu trình diễn validation phía trình duyệt, ánh xạ lỗi máy chủ, focus lỗi đầu tiên và trạng thái gửi. Đây không phải trang đăng ký và không thực hiện network request.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-border bg-surface p-5 shadow-xs sm:p-6 lg:p-8">
+          <FormFoundationDemo />
         </div>
       </section>
 
