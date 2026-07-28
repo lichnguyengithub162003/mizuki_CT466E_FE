@@ -5,7 +5,7 @@ import App from '@/App.vue'
 import { createAppRouter } from '@/router'
 
 describe('foundation router', () => {
-  it('renders the foundation, forbidden, and not-found pages', async () => {
+  it('renders the foundation, admin shell, forbidden, and not-found pages', async () => {
     const router = createAppRouter(createMemoryHistory())
     const wrapper = mount(App, {
       global: {
@@ -18,6 +18,10 @@ describe('foundation router', () => {
     await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Mizuki foundation')
     expect(wrapper.findAll('[data-token-section]')).toHaveLength(7)
+
+    await router.push('/admin-shell')
+    await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Một nhịp vận hành thật nhẹ nhàng.')
 
     await router.push('/forbidden')
     await flushPromises()

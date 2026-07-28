@@ -15,15 +15,20 @@
   --primary-950: #09271e;
 
   /* Core and neutral */
-  --background: #fafaf7;
+  --background: #fcfcfd;
   --foreground: #18221d;
   --surface: #ffffff;
-  --surface-subtle: #f5f6f3;
+  --surface-subtle: #f7faf8;
   --text-secondary: #66716b;
   --text-muted: #929b96;
   --overlay: rgba(9, 39, 30, 0.45);
   --primary: var(--primary-700);
-  --primary-foreground: var(--primary-50);
+  --primary-foreground: #ffffff;
+  --admin-sage: #c5d4ca;
+  --admin-sage-soft: #edf3ef;
+  --admin-periwinkle: #d9def3;
+  --admin-apricot: #f2d4c4;
+  --admin-powder: #d9e8ef;
   --secondary: var(--primary-100);
   --secondary-foreground: var(--primary-900);
   --muted: var(--surface-subtle);
@@ -121,6 +126,11 @@
   --color-primary-800: var(--primary-800);
   --color-primary-900: var(--primary-900);
   --color-primary-950: var(--primary-950);
+  --color-admin-sage: var(--admin-sage);
+  --color-admin-sage-soft: var(--admin-sage-soft);
+  --color-admin-periwinkle: var(--admin-periwinkle);
+  --color-admin-apricot: var(--admin-apricot);
+  --color-admin-powder: var(--admin-powder);
 
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -413,6 +423,48 @@
 }
 
 @layer components {
+  .admin-premium-canvas {
+    position: relative;
+    isolation: isolate;
+    background:
+      radial-gradient(circle at 9% 4%, rgba(197, 212, 202, 0.34), transparent 25rem),
+      radial-gradient(circle at 92% 12%, rgba(217, 222, 243, 0.28), transparent 24rem),
+      var(--surface-subtle);
+  }
+
+  .admin-glass-panel {
+    border: 1px solid rgba(227, 231, 228, 0.82);
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow:
+      0 1px 2px rgba(16, 28, 19, 0.04),
+      0 12px 32px rgba(16, 28, 19, 0.045);
+    backdrop-filter: blur(20px) saturate(125%);
+  }
+
+  .admin-premium-card {
+    transition:
+      border-color var(--duration-normal) var(--ease-standard),
+      box-shadow var(--duration-normal) var(--ease-standard),
+      transform var(--duration-normal) var(--ease-emphasized);
+  }
+
+  .admin-premium-card:hover {
+    border-color: rgba(159, 198, 178, 0.72);
+    box-shadow:
+      0 2px 5px rgba(16, 28, 19, 0.04),
+      0 18px 42px rgba(16, 28, 19, 0.065);
+    transform: translateY(-1px);
+  }
+
+  .admin-soft-grid {
+    background-image: radial-gradient(
+      circle,
+      rgba(39, 93, 70, 0.08) 1px,
+      transparent 1.25px
+    );
+    background-size: 2rem 2rem;
+  }
+
   .motion-interactive {
     transition-property: background-color, border-color, color, box-shadow, transform;
     transition-duration: var(--duration-fast);
@@ -639,5 +691,9 @@
   .motion-toast-leave-to {
     opacity: 1;
     transform: none;
+  }
+
+  .admin-premium-card:hover {
+    transform: none !important;
   }
 }
