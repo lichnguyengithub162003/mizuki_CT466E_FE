@@ -27,6 +27,12 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'admin' },
   },
   {
+    path: '/customer-shell',
+    name: 'customer-shell',
+    component: () => import('@/pages/foundation/CustomerShellPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: ROUTE_NAMES.notFound,
     component: () => import('@/pages/foundation/NotFoundPage.vue'),

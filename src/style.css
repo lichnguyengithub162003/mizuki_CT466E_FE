@@ -102,6 +102,11 @@
   --section-space-mobile: 2.5rem;
   --section-space-tablet: 3.5rem;
   --section-space-desktop: 5rem;
+
+  /* Customer brand */
+  --font-customer-logo:
+    'Eleganto Sans Medium', 'Avenir Next', Inter, ui-sans-serif, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 @theme inline {
@@ -275,6 +280,12 @@
 }
 
 @layer utilities {
+  .customer-wordmark {
+    font-family: var(--font-customer-logo);
+    font-weight: 500;
+    letter-spacing: 0.085em;
+  }
+
   .text-display-xl {
     font-size: 3rem;
     font-weight: 700;
@@ -422,7 +433,61 @@
   }
 }
 
+@keyframes customer-announcement-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 @layer components {
+  .customer-search-input::-webkit-search-cancel-button,
+  .customer-search-input::-webkit-search-decoration {
+    appearance: none;
+  }
+
+  .customer-announcement-offer {
+    font-weight: 750;
+  }
+
+  .customer-announcement-track {
+    animation: customer-announcement-scroll 24s cubic-bezier(0, 0, 1, 1) infinite;
+    will-change: transform;
+  }
+
+  .customer-announcement-bar:hover .customer-announcement-track,
+  .customer-announcement-bar:focus .customer-announcement-track,
+  .customer-announcement-bar:focus-within .customer-announcement-track {
+    animation-play-state: paused;
+  }
+
+  .customer-hero-banner::before {
+    position: absolute;
+    inset: auto -4rem -7rem auto;
+    width: 17rem;
+    height: 17rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.38);
+    content: '';
+  }
+
+  .customer-hero-banner-primary {
+    background-color: #c5d4ca;
+    background-image:
+      radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.62), transparent 22%),
+      radial-gradient(circle at 0% 0%, #e3f1eb 0%, transparent 72%);
+  }
+
+  .customer-hero-banner-secondary {
+    background-color: #eadbc3;
+    background-image:
+      radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.7), transparent 24%),
+      radial-gradient(circle at 0% 0%, #f5eee2 0%, transparent 72%);
+  }
+
+  .customer-hero-product-shape {
+    transform: rotate(7deg);
+  }
+
   .admin-premium-canvas {
     position: relative;
     isolation: isolate;
@@ -695,5 +760,28 @@
 
   .admin-premium-card:hover {
     transform: none !important;
+  }
+
+  .customer-announcement-bar {
+    overflow: visible;
+  }
+
+  .customer-announcement-track {
+    width: 100%;
+    animation: none !important;
+    transform: none !important;
+    will-change: auto;
+  }
+
+  .customer-announcement-sequence {
+    width: 100%;
+    flex-wrap: wrap;
+    padding-inline: 1rem;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .customer-announcement-sequence[aria-hidden='true'] {
+    display: none;
   }
 }
