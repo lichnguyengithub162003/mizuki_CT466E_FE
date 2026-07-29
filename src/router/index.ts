@@ -33,6 +33,18 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer' },
   },
   {
+    path: '/home',
+    name: 'customer-home',
+    component: () => import('@/pages/customer/HomePage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
+    path: ROUTE_PATHS.skinCare,
+    name: ROUTE_NAMES.skinCare,
+    component: () => import('@/pages/clinic/SkinCarePage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: ROUTE_NAMES.notFound,
     component: () => import('@/pages/foundation/NotFoundPage.vue'),

@@ -9,6 +9,7 @@ import {
   CustomerMobileNavigation,
   CustomerVoucherFloat,
 } from '@/components/customer-shell'
+import { ROUTE_NAMES } from '@/constants/routes'
 import {
   DEFAULT_CUSTOMER_BRANCH,
   type CustomerBranch,
@@ -24,6 +25,10 @@ defineSlots<{
 const route = useRoute()
 const selectedBranch = ref<CustomerBranch>(DEFAULT_CUSTOMER_BRANCH)
 const activeKey = computed<CustomerNavigationKey>(() => {
+  if (route.name === ROUTE_NAMES.skinCare) {
+    return 'services'
+  }
+
   const section = route.query.section
   if (
     section === 'products' ||

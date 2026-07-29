@@ -15,7 +15,7 @@ const navigationItems: readonly {
   to: string
   icon: Component
 }[] = [
-  { key: 'home', label: 'Trang chủ', to: '/customer-shell', icon: House },
+  { key: 'home', label: 'Trang chủ', to: '/home', icon: House },
   { key: 'categories', label: 'Danh mục', to: '/customer-shell?section=categories', icon: Grid2X2 },
   { key: 'favorites', label: 'Yêu thích', to: '/customer-shell?section=favorites', icon: Heart },
   { key: 'cart', label: 'Giỏ hàng', to: '/customer-shell?section=cart', icon: ShoppingBag },

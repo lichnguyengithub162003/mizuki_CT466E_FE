@@ -488,6 +488,49 @@
     transform: rotate(7deg);
   }
 
+  .home-hero-slide::before {
+    position: absolute;
+    right: -5rem;
+    bottom: -8rem;
+    width: 20rem;
+    height: 20rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.32);
+    content: '';
+  }
+
+  .home-hero-tone-sage {
+    background-color: #c5d4ca;
+    background-image:
+      radial-gradient(circle at 84% 14%, rgba(255, 255, 255, 0.65), transparent 22%),
+      radial-gradient(circle at 0% 0%, #e8f3ed 0%, transparent 72%);
+  }
+
+  .home-hero-tone-apricot {
+    background-color: #eadbc3;
+    background-image:
+      radial-gradient(circle at 84% 14%, rgba(255, 255, 255, 0.68), transparent 22%),
+      radial-gradient(circle at 0% 0%, #f7ede3 0%, transparent 72%);
+  }
+
+  .home-hero-tone-periwinkle {
+    background-color: #d9def3;
+    background-image:
+      radial-gradient(circle at 84% 14%, rgba(255, 255, 255, 0.68), transparent 22%),
+      radial-gradient(circle at 0% 0%, #eef0fa 0%, transparent 72%);
+  }
+
+  .home-hero-object {
+    transform: rotate(7deg);
+  }
+
+  .home-brand-showcase {
+    background-color: #dfece5;
+    background-image:
+      radial-gradient(circle at 88% 4%, rgba(217, 222, 243, 0.78), transparent 25%),
+      radial-gradient(circle at 7% 92%, rgba(242, 212, 196, 0.58), transparent 24%);
+  }
+
   .admin-premium-canvas {
     position: relative;
     isolation: isolate;

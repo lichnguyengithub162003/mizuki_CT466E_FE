@@ -13,12 +13,12 @@ const navigationItems: readonly {
   label: string
   to: string
 }[] = [
-  { key: 'home', label: 'Trang chủ', to: '/customer-shell' },
+  { key: 'home', label: 'Trang chủ', to: '/home' },
   { key: 'products', label: 'Sản phẩm', to: '/customer-shell?section=products' },
   { key: 'skincare', label: 'Chăm sóc da', to: '/customer-shell?section=skincare' },
   { key: 'makeup', label: 'Trang điểm', to: '/customer-shell?section=makeup' },
   { key: 'haircare', label: 'Chăm sóc tóc', to: '/customer-shell?section=haircare' },
-  { key: 'services', label: 'Dịch vụ', to: '/customer-shell?section=services' },
+  { key: 'services', label: 'Dịch vụ chăm sóc da', to: '/skin-care' },
   { key: 'promotions', label: 'Khuyến mãi', to: '/customer-shell?section=promotions' },
 ]
 </script>
