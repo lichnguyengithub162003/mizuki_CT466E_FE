@@ -39,6 +39,12 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer' },
   },
   {
+    path: ROUTE_PATHS.products,
+    name: ROUTE_NAMES.products,
+    component: () => import('@/pages/customer/ProductListingPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
     path: ROUTE_PATHS.skinCare,
     name: ROUTE_NAMES.skinCare,
     component: () => import('@/pages/clinic/SkinCarePage.vue'),

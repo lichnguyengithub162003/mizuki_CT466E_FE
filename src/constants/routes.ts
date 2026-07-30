@@ -1,5 +1,6 @@
 export const ROUTE_NAMES = {
   foundation: 'foundation',
+  products: 'products',
   skinCare: 'skin-care',
   forbidden: 'forbidden',
   notFound: 'not-found',
@@ -7,6 +8,7 @@ export const ROUTE_NAMES = {
 
 export const ROUTE_PATHS = {
   foundation: '/',
+  products: '/products',
   skinCare: '/skin-care',
   forbidden: '/forbidden',
   notFoundExample: '/khong-ton-tai',

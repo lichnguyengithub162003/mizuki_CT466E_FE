@@ -363,7 +363,7 @@ describe('customer shell foundation', () => {
     expect(wrapper.findAll('nav a')).toHaveLength(5)
     expect(wrapper.findAll('nav a').map((item) => item.attributes('aria-label'))).toEqual([
       'Trang chủ',
-      'Danh mục',
+      'Sản phẩm',
       'Yêu thích',
       'Giỏ hàng',
       'Tài khoản',
@@ -400,16 +400,21 @@ describe('customer shell foundation', () => {
     expect(wrapper.get('h1').text()).toContain('Chăm da dịu nhẹ')
   })
 
-  it('changes demo navigation without reloading the page', async () => {
+  it('links to the real product page and renders it without reloading', async () => {
     const { wrapper, router } = await mountCustomerApp()
     const desktopNavigation = wrapper.get('nav[aria-label="Điều hướng mua sắm"]')
 
-    await desktopNavigation.get('a[href="/customer-shell?section=products"]').trigger('click')
+    const productsNavigation = desktopNavigation.get('[data-navigation-key="products"]')
+    const productsHref = productsNavigation.attributes('href')
+    expect(productsHref).toBe('/products')
+    if (productsHref === undefined) {
+      throw new Error('Product navigation must provide an href.')
+    }
+    await router.push(productsHref)
     await flushPromises()
 
-    expect(router.currentRoute.value.path).toBe('/customer-shell')
-    expect(router.currentRoute.value.query.section).toBe('products')
-    expect(wrapper.get('h1').text()).toContain('Chăm da dịu nhẹ')
+    expect(router.currentRoute.value.path).toBe('/products')
+    expect(wrapper.get('h1').text()).toContain('Sản phẩm chăm sóc da')
   })
 
   it('does not make a network request during local interactions', async () => {

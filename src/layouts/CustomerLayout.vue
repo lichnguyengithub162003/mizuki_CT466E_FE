@@ -25,6 +25,10 @@ defineSlots<{
 const route = useRoute()
 const selectedBranch = ref<CustomerBranch>(DEFAULT_CUSTOMER_BRANCH)
 const activeKey = computed<CustomerNavigationKey>(() => {
+  if (route.name === ROUTE_NAMES.products) {
+    return 'products'
+  }
+
   if (route.name === ROUTE_NAMES.skinCare) {
     return 'services'
   }

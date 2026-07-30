@@ -14,7 +14,7 @@ const navigationItems: readonly {
   to: string
 }[] = [
   { key: 'home', label: 'Trang chủ', to: '/home' },
-  { key: 'products', label: 'Sản phẩm', to: '/customer-shell?section=products' },
+  { key: 'products', label: 'Sản phẩm', to: '/products' },
   { key: 'skincare', label: 'Chăm sóc da', to: '/customer-shell?section=skincare' },
   { key: 'makeup', label: 'Trang điểm', to: '/customer-shell?section=makeup' },
   { key: 'haircare', label: 'Chăm sóc tóc', to: '/customer-shell?section=haircare' },
@@ -34,6 +34,7 @@ const navigationItems: readonly {
         v-for="item in navigationItems"
         :key="item.key"
         :to="item.to"
+        :data-navigation-key="item.key"
         :aria-current="props.activeKey === item.key ? 'page' : undefined"
         :class="cn(
           'motion-interactive inline-flex min-h-10 items-center rounded-pill border px-4 text-body-sm font-normal leading-6 tracking-[0.01em] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',

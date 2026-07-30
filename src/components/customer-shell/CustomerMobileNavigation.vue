@@ -16,7 +16,7 @@ const navigationItems: readonly {
   icon: Component
 }[] = [
   { key: 'home', label: 'Trang chủ', to: '/home', icon: House },
-  { key: 'categories', label: 'Danh mục', to: '/customer-shell?section=categories', icon: Grid2X2 },
+  { key: 'products', label: 'Sản phẩm', to: '/products', icon: Grid2X2 },
   { key: 'favorites', label: 'Yêu thích', to: '/customer-shell?section=favorites', icon: Heart },
   { key: 'cart', label: 'Giỏ hàng', to: '/customer-shell?section=cart', icon: ShoppingBag },
   { key: 'account', label: 'Tài khoản', to: '/customer-shell?section=account', icon: UserRound },
@@ -33,6 +33,7 @@ const navigationItems: readonly {
         v-for="item in navigationItems"
         :key="item.key"
         :to="item.to"
+        :data-navigation-key="item.key"
         :aria-label="item.label"
         :aria-current="props.activeKey === item.key ? 'page' : undefined"
         :data-active="props.activeKey === item.key ? 'true' : undefined"
