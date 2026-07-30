@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Heart, ShoppingBag, UserRound } from '@lucide/vue'
+import { RouterLink } from 'vue-router'
+import { ROUTE_NAMES } from '@/constants/routes'
 import type { CustomerBranch, CustomerNavigationKey } from '@/types/customer-shell'
 import CustomerBranchSelector from './CustomerBranchSelector.vue'
 import CustomerDesktopNavigation from './CustomerDesktopNavigation.vue'
@@ -26,21 +28,23 @@ const emit = defineEmits<{
       <CustomerLogo />
       <CustomerSearch class="min-w-0 flex-1" @submit="emit('search', $event)" />
       <div class="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
+        <RouterLink
+          :to="{ name: ROUTE_NAMES.favorites }"
           class="motion-interactive grid size-11 place-items-center rounded-xl text-text-secondary hover:bg-primary-50 hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           aria-label="Yêu thích"
+          :aria-current="props.activeKey === 'favorites' ? 'page' : undefined"
         >
           <Heart class="size-5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
+        </RouterLink>
+        <RouterLink
+          :to="{ name: ROUTE_NAMES.cart }"
           class="motion-interactive relative grid size-11 place-items-center rounded-xl text-text-secondary hover:bg-primary-50 hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           aria-label="Giỏ hàng, 2 sản phẩm demo"
+          :aria-current="props.activeKey === 'cart' ? 'page' : undefined"
         >
           <ShoppingBag class="size-5" aria-hidden="true" />
           <span class="absolute right-1.5 top-1.5 grid size-4 place-items-center rounded-full bg-primary-700 text-[0.625rem] font-semibold text-white">2</span>
-        </button>
+        </RouterLink>
         <button
           type="button"
           class="motion-interactive grid size-11 place-items-center rounded-xl text-text-secondary hover:bg-primary-50 hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

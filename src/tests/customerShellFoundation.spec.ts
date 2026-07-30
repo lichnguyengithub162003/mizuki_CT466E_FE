@@ -394,6 +394,8 @@ describe('customer shell foundation', () => {
       'Giỏ hàng',
       'Tài khoản',
     ])
+    expect(wrapper.get('[data-navigation-key="favorites"]').attributes('href')).toBe('/favorites')
+    expect(wrapper.get('[data-navigation-key="cart"]').attributes('href')).toBe('/cart')
     expect(wrapper.findAll('nav a span').every((item) => item.text() === '')).toBe(true)
   })
 
@@ -467,8 +469,8 @@ describe('customer shell foundation', () => {
     })
     mountedWrappers.push(wrapper)
 
-    expect(wrapper.find('button[aria-label="Yêu thích"]').exists()).toBe(true)
-    expect(wrapper.find('button[aria-label^="Giỏ hàng"]').exists()).toBe(true)
+    expect(wrapper.find('a[aria-label="Yêu thích"]').attributes('href')).toBe('/favorites')
+    expect(wrapper.find('a[aria-label^="Giỏ hàng"]').attributes('href')).toBe('/cart')
     expect(wrapper.find('button[aria-label="Tài khoản"]').exists()).toBe(true)
     expect(wrapper.find('button[aria-label^="Chọn chi nhánh"]').exists()).toBe(true)
   })

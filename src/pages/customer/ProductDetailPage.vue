@@ -182,6 +182,10 @@ function submitPurchase(action: 'cart' | 'buy'): void {
   purchaseFeedback.value = action === 'cart'
     ? `Đã chuẩn bị ${quantity.value} sản phẩm trong giỏ hàng demo.`
     : 'Đã chuẩn bị bước mua ngay trong bản demo.'
+
+  if (action === 'cart') {
+    void router.push({ name: ROUTE_NAMES.cart })
+  }
 }
 
 function submitQuestion(): void {

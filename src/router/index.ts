@@ -51,6 +51,18 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer' },
   },
   {
+    path: ROUTE_PATHS.favorites,
+    name: ROUTE_NAMES.favorites,
+    component: () => import('@/pages/customer/FavoritesPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
+    path: ROUTE_PATHS.cart,
+    name: ROUTE_NAMES.cart,
+    component: () => import('@/pages/customer/CartPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
     path: ROUTE_PATHS.skinCare,
     name: ROUTE_NAMES.skinCare,
     component: () => import('@/pages/clinic/SkinCarePage.vue'),

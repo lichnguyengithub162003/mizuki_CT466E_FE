@@ -34,6 +34,14 @@ const activeKey = computed<CustomerNavigationKey>(() => {
     return 'services'
   }
 
+  if (route.name === ROUTE_NAMES.favorites) {
+    return 'favorites'
+  }
+
+  if (route.name === ROUTE_NAMES.cart) {
+    return 'cart'
+  }
+
   const section = route.query.section
   if (
     section === 'products' ||

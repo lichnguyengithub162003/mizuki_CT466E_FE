@@ -5,7 +5,7 @@ import App from '@/App.vue'
 import { createAppRouter } from '@/router'
 
 describe('foundation router', () => {
-  it('renders the foundation, admin shell, customer shell, home, products, forbidden, and not-found pages', async () => {
+  it('renders foundation and all public customer routes', async () => {
     const router = createAppRouter(createMemoryHistory())
     const wrapper = mount(App, {
       global: {
@@ -34,6 +34,14 @@ describe('foundation router', () => {
     await router.push('/products')
     await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Sản phẩm chăm sóc da')
+
+    await router.push('/favorites')
+    await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Sản phẩm yêu thích')
+
+    await router.push('/cart')
+    await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Giỏ hàng của bạn')
 
     await router.push('/forbidden')
     await flushPromises()
