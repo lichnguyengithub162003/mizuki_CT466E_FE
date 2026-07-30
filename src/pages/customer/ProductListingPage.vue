@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ProductFeaturedCategories,
   ProductFilterDialog,
@@ -20,6 +21,7 @@ import {
   productSortOptions,
   suggestedProducts,
 } from '@/data/products/productListingDemoData'
+import { ROUTE_NAMES } from '@/constants/routes'
 import CustomerLayout from '@/layouts/CustomerLayout.vue'
 import type {
   ProductFilterState,
@@ -30,6 +32,7 @@ import type {
 
 const INITIAL_VISIBLE_COUNT = 12
 const LOAD_MORE_COUNT = 8
+const router = useRouter()
 
 const filters = ref<ProductFilterState>({ ...defaultProductFilters })
 const sort = ref<ProductSortKey>('popular')
@@ -122,6 +125,13 @@ function toggleCategory(categoryId: string): void {
 function loadMore(): void {
   visibleCount.value += LOAD_MORE_COUNT
 }
+
+function openProductDetail(product: ProductListingProduct): void {
+  void router.push({
+    name: ROUTE_NAMES.productDetail,
+    params: { slug: product.slug },
+  })
+}
 </script>
 
 <template>
@@ -178,6 +188,7 @@ function loadMore(): void {
               :products="visibleProducts"
               :state="contentState"
               @retry="resetFilters"
+              @select="openProductDetail"
             />
 
             <div v-if="hasMoreProducts" class="mt-7 flex justify-center">

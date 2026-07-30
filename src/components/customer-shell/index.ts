@@ -1,4 +1,5 @@
 export { default as CustomerAnnouncementBar } from './CustomerAnnouncementBar.vue'
+export { default as CustomerBackToTop } from './CustomerBackToTop.vue'
 export { default as CustomerBranchDialog } from './CustomerBranchDialog.vue'
 export { default as CustomerBranchSelector } from './CustomerBranchSelector.vue'
 export { default as CustomerCategoryMenu } from './CustomerCategoryMenu.vue'

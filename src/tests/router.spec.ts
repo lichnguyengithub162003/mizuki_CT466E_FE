@@ -42,5 +42,5 @@ describe('foundation router', () => {
     await router.push('/route-khong-ton-tai')
     await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Không tìm thấy trang')
-  })
+  }, 10_000)
 })

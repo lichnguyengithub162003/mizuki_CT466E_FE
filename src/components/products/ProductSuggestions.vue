@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Heart, PackageOpen, Star } from '@lucide/vue'
 import { ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { ROUTE_NAMES } from '@/constants/routes'
 import type { ProductListingProduct } from '@/types/products'
 import { cn } from '@/utils/cn'
 
@@ -88,12 +90,12 @@ function handleKeyboard(event: KeyboardEvent): void {
         </p>
         <h2 id="product-suggestion-heading" class="mt-1 text-heading-3">Có thể bạn thích</h2>
       </div>
-      <a
-        href="#product-results"
+      <RouterLink
+        :to="{ name: ROUTE_NAMES.products }"
         class="motion-interactive shrink-0 rounded-lg px-2 py-1.5 text-body-sm font-semibold text-primary-800 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         Xem tất cả
-      </a>
+      </RouterLink>
     </div>
 
     <div class="relative mt-4">
@@ -109,7 +111,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         <article
           v-for="(product, index) in props.products"
           :key="`suggested-${product.id}`"
-          class="group/card flex h-full min-w-0 w-auto shrink-0 basis-[58%] snap-start flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xs sm:basis-[13rem] md:basis-[12.5rem] xl:basis-[13.5rem]"
+          class="group/card flex h-full min-w-0 w-auto shrink-0 basis-[58%] snap-start flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xs sm:basis-[13rem] md:basis-[calc((100%_-_2.25rem)/4)] xl:basis-[calc((100%_-_3.75rem)/6)]"
           :aria-labelledby="`compact-product-${product.id}`"
           data-compact-product-card
           data-suggested-product

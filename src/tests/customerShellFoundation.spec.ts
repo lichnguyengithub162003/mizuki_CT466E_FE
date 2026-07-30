@@ -8,6 +8,7 @@ import { createMemoryHistory, type Router } from 'vue-router'
 import App from '@/App.vue'
 import {
   CustomerAnnouncementBar,
+  CustomerBackToTop,
   CustomerBranchSelector,
   CustomerCategoryHighlights,
   CustomerCategoryMenu,
@@ -64,6 +65,7 @@ afterEach(() => {
   mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount())
   document.body.innerHTML = ''
   document.body.removeAttribute('style')
+  Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -173,6 +175,30 @@ describe('customer shell foundation', () => {
 
     expect(wrapper.get('button').text()).toContain('Nhận voucher')
     expect(wrapper.get('button').attributes('aria-label')).toBe('Nhận voucher Mizuki')
+  })
+
+  it('shows the shared back-to-top control after scrolling and respects motion preference', async () => {
+    const scrollTo = vi.fn()
+    vi.stubGlobal('scrollTo', scrollTo)
+    const wrapper = mount(CustomerBackToTop)
+    mountedWrappers.push(wrapper)
+
+    expect(wrapper.find('[data-customer-back-to-top]').exists()).toBe(false)
+
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 640 })
+    window.dispatchEvent(new Event('scroll'))
+    await nextTick()
+
+    const control = wrapper.get('[data-customer-back-to-top]')
+    expect(control.attributes('aria-label')).toBe('Quay lên đầu trang')
+    expect(control.classes()).toEqual(expect.arrayContaining([
+      'bottom-[10rem]',
+      'md:bottom-[5.5rem]',
+      'size-11',
+    ]))
+
+    await control.trigger('click')
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
   })
 
   it('shows the selected branch name', () => {

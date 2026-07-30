@@ -341,6 +341,28 @@ const concernSequence = [
   ['hydration'],
   ['oil-control', 'acne'],
 ] as const
+const productSlugs = [
+  'gel-lam-sach-diu-nhe-can-bang-da',
+  'serum-phuc-hoi-hang-rao-bao-ve-da',
+  'kem-chong-nang-mong-nhe-spf50',
+  'nuoc-tay-trang-diu-nhe',
+  'kem-duong-am-sau-ban-dem',
+  'toner-can-bang-khong-con',
+  'mat-na-cap-am-chuyen-sau',
+  'sua-rua-mat-tao-bot-min',
+  'tinh-chat-duong-sang-da',
+  'kem-duong-phuc-hoi-da',
+  'dau-tay-trang-thuc-vat',
+  'xit-khoang-lam-diu',
+  'gel-duong-am-mong-nhe',
+  'kem-mat-giam-dau-hieu-met-moi',
+  'tinh-chat-bha-lam-sach-lo-chan-long',
+  'son-duong-co-mau',
+  'phan-phu-kiem-dau',
+  'dau-goi-phuc-hoi-toc',
+  'dau-xa-duong-muot',
+  'kem-u-toc-chuyen-sau',
+] as const
 
 export const productListingProducts: readonly ProductListingProduct[] = productNames.map(
   (name, index) => {
@@ -356,6 +378,7 @@ export const productListingProducts: readonly ProductListingProduct[] = productN
 
     return {
       id: `listing-${index + 1}`,
+      slug: productSlugs[index] ?? `san-pham-demo-${index + 1}`,
       name,
       brand: brandFilterOptions[index % brandFilterOptions.length]?.label ?? 'Mizuki Lab',
       brandId: brandSequence[index % brandSequence.length] ?? 'mizuki-lab',

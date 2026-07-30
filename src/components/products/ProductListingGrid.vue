@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { AsyncContent, DataGridSkeleton } from '@/components/feedback'
 import HomeProductCard from '@/components/home/HomeProductCard.vue'
+import type { HomeProduct } from '@/types/home'
 import type {
   ProductContentState,
   ProductListingProduct,
@@ -17,8 +18,9 @@ const props = withDefaults(
   },
 )
 
-defineEmits<{
+const emit = defineEmits<{
   retry: []
+  select: [product: ProductListingProduct]
 }>()
 
 const asyncError = computed(() =>
@@ -31,6 +33,14 @@ const asyncError = computed(() =>
       }
     : null,
 )
+
+function openProductDetail(product: HomeProduct): void {
+  const listingProduct = props.products.find((item) => item.id === product.id)
+
+  if (listingProduct) {
+    emit('select', listingProduct)
+  }
+}
 </script>
 
 <template>
@@ -59,6 +69,7 @@ const asyncError = computed(() =>
         :key="product.id"
         :product="product"
         data-listing-product
+        @action="openProductDetail"
       />
     </div>
   </AsyncContent>

@@ -248,8 +248,10 @@ describe('customer product listing page', () => {
   })
 
   it('moves through compact suggestions with buttons and keyboard', async () => {
+    const router = createAppRouter(createMemoryHistory())
     const wrapper = mount(ProductSuggestions, {
       props: { products: suggestedProducts },
+      global: { plugins: [router] },
     })
     mountedWrappers.push(wrapper)
     const carousel = wrapper.get('[data-suggestion-carousel]')

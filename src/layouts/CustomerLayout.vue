@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   CustomerAnnouncementBar,
+  CustomerBackToTop,
   CustomerFooter,
   CustomerHeader,
   CustomerMobileHeader,
@@ -25,7 +26,7 @@ defineSlots<{
 const route = useRoute()
 const selectedBranch = ref<CustomerBranch>(DEFAULT_CUSTOMER_BRANCH)
 const activeKey = computed<CustomerNavigationKey>(() => {
-  if (route.name === ROUTE_NAMES.products) {
+  if (route.name === ROUTE_NAMES.products || route.name === ROUTE_NAMES.productDetail) {
     return 'products'
   }
 
@@ -72,6 +73,7 @@ function updateBranch(branch: CustomerBranch): void {
     <CustomerFooter />
     <slot name="footer-extra" />
     <CustomerVoucherFloat />
+    <CustomerBackToTop />
     <CustomerMobileNavigation :active-key="activeKey" />
   </div>
 </template>
