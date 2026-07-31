@@ -129,6 +129,7 @@ function announceChange(message: string): void {
 function addRecommendedProduct(name: string): void {
   feedback.value = `Đã thêm “${name}” vào giỏ hàng demo.`
 }
+
 </script>
 
 <template>
@@ -285,11 +286,19 @@ function addRecommendedProduct(name: string): void {
                 </div>
               </dl>
 
-              <button
-                type="button"
+              <RouterLink
+                v-if="summary.selectedCount > 0"
+                :to="{ name: ROUTE_NAMES.checkout }"
                 class="motion-interactive mt-5 hidden min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-45 lg:inline-flex"
-                :disabled="summary.selectedCount === 0"
-                @click="announceChange('Checkout sẽ được triển khai ở bước tiếp theo.')"
+                data-checkout-action
+              >
+                Tiến hành thanh toán
+              </RouterLink>
+              <button
+                v-else
+                type="button"
+                class="mt-5 hidden min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground opacity-45 lg:inline-flex"
+                disabled
               >
                 Tiến hành thanh toán
               </button>
@@ -376,11 +385,19 @@ function addRecommendedProduct(name: string): void {
           <p class="text-caption text-text-secondary">{{ summary.selectedCount }} sản phẩm</p>
           <strong class="block truncate text-body-lg text-[#c8423a]">{{ currencyFormatter.format(summary.total) }}</strong>
         </div>
-        <button
-          type="button"
+        <RouterLink
+          v-if="summary.selectedCount > 0"
+          :to="{ name: ROUTE_NAMES.checkout }"
           class="motion-interactive inline-flex min-h-12 flex-none items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-45"
-          :disabled="summary.selectedCount === 0"
-          @click="announceChange('Checkout sẽ được triển khai ở bước tiếp theo.')"
+          data-checkout-action
+        >
+          Mua hàng
+        </RouterLink>
+        <button
+          v-else
+          type="button"
+          class="inline-flex min-h-12 flex-none items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground opacity-45"
+          disabled
         >
           Mua hàng
         </button>

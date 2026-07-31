@@ -23,6 +23,15 @@ defineSlots<{
   'footer-extra'?: () => unknown
 }>()
 
+withDefaults(
+  defineProps<{
+    hideFloatingUtilities?: boolean
+  }>(),
+  {
+    hideFloatingUtilities: false,
+  },
+)
+
 const route = useRoute()
 const selectedBranch = ref<CustomerBranch>(DEFAULT_CUSTOMER_BRANCH)
 const activeKey = computed<CustomerNavigationKey>(() => {
@@ -38,7 +47,7 @@ const activeKey = computed<CustomerNavigationKey>(() => {
     return 'favorites'
   }
 
-  if (route.name === ROUTE_NAMES.cart) {
+  if (route.name === ROUTE_NAMES.cart || route.name === ROUTE_NAMES.checkout) {
     return 'cart'
   }
 
@@ -80,8 +89,8 @@ function updateBranch(branch: CustomerBranch): void {
     </main>
     <CustomerFooter />
     <slot name="footer-extra" />
-    <CustomerVoucherFloat />
-    <CustomerBackToTop />
+    <CustomerVoucherFloat v-if="!hideFloatingUtilities" />
+    <CustomerBackToTop v-if="!hideFloatingUtilities" />
     <CustomerMobileNavigation :active-key="activeKey" />
   </div>
 </template>

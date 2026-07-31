@@ -53,6 +53,7 @@ describe('customer cart page', () => {
     expect(wrapper.get('header a[aria-label^="Giỏ hàng"]').attributes('href')).toBe('/cart')
     expect(wrapper.get('[data-navigation-key="cart"]').attributes('href')).toBe('/cart')
     expect(wrapper.get('[data-navigation-key="cart"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-cart-summary] [data-checkout-action]').attributes('href')).toBe('/checkout')
   }, 10_000)
 
   it('selects individual items and all eligible items', async () => {
