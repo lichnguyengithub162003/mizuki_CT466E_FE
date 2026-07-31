@@ -3,6 +3,8 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, type Router } from 'vue-router'
 import App from '@/App.vue'
 import { createAppRouter } from '@/router'
+import { useAuthStore } from '@/stores/auth'
+import { pinia } from '@/stores/pinia'
 
 interface MountedFavorites {
   readonly wrapper: VueWrapper
@@ -32,6 +34,21 @@ async function mountFavorites(): Promise<MountedFavorites> {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  useAuthStore(pinia).$patch({
+    user: {
+      id: 1,
+      name: 'Customer',
+      email: 'customer@example.com',
+      phone: null,
+      avatar: null,
+      role: 'customer',
+      role_label: 'Khách hàng',
+      branch_id: null,
+      email_verified_at: null,
+      created_at: '2026-07-31T00:00:00Z',
+    },
+    isInitialized: true,
+  })
 })
 
 afterEach(() => {

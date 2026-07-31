@@ -14,10 +14,12 @@ describe('normalizeApiError', () => {
         status: 422,
         data: {
           message: 'Dữ liệu chưa hợp lệ.',
-          errors: {
-            email: ['Email không hợp lệ.'],
-            name: 'Tên là bắt buộc.',
-            ignored: 42,
+          data: {
+            errors: {
+              email: ['Email không hợp lệ.'],
+              name: 'Tên là bắt buộc.',
+              ignored: 42,
+            },
           },
         },
       },
@@ -33,6 +35,21 @@ describe('normalizeApiError', () => {
         name: ['Tên là bắt buộc.'],
       },
     })
+  })
+
+  it('extracts retry metadata from a throttled response', () => {
+    const error = normalizeApiError({
+      isAxiosError: true,
+      response: {
+        status: 429,
+        data: {
+          message: 'Quá nhiều yêu cầu. Vui lòng thử lại sau!',
+          meta: { retry_after: 60 },
+        },
+      },
+    })
+
+    expect(error).toMatchObject({ kind: 'http', status: 429, retryAfter: 60 })
   })
 
   it.each([

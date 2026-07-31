@@ -7,6 +7,7 @@ export { default as CustomerCategoryHighlights } from './CustomerCategoryHighlig
 export { default as CustomerDesktopNavigation } from './CustomerDesktopNavigation.vue'
 export { default as CustomerFooter } from './CustomerFooter.vue'
 export { default as CustomerHeader } from './CustomerHeader.vue'
+export { default as CustomerAccountControl } from './CustomerAccountControl.vue'
 export { default as CustomerHeroBanners } from './CustomerHeroBanners.vue'
 export { default as CustomerLogo } from './CustomerLogo.vue'
 export { default as CustomerMobileHeader } from './CustomerMobileHeader.vue'

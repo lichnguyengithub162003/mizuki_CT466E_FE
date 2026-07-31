@@ -28,13 +28,21 @@ function readMessage(data: unknown): string | undefined {
 }
 
 function readValidationErrors(data: unknown): ApiValidationErrors | undefined {
-  if (!isRecord(data) || !isRecord(data.errors)) {
+  if (!isRecord(data)) {
     return undefined
   }
 
+  const errorContainer = isRecord(data.errors)
+    ? data.errors
+    : isRecord(data.data) && isRecord(data.data.errors)
+      ? data.data.errors
+      : undefined
+
+  if (!errorContainer) return undefined
+
   const validationErrors: Record<string, readonly string[]> = {}
 
-  for (const [field, messages] of Object.entries(data.errors)) {
+  for (const [field, messages] of Object.entries(errorContainer)) {
     if (typeof messages === 'string') {
       validationErrors[field] = [messages]
       continue
@@ -46,6 +54,14 @@ function readValidationErrors(data: unknown): ApiValidationErrors | undefined {
   }
 
   return Object.keys(validationErrors).length > 0 ? validationErrors : undefined
+}
+
+function readRetryAfter(data: unknown): number | undefined {
+  if (!isRecord(data) || !isRecord(data.meta) || typeof data.meta.retry_after !== 'number') {
+    return undefined
+  }
+
+  return data.meta.retry_after
 }
 
 function kindFromStatus(status: number): ApplicationErrorKind {
@@ -63,6 +79,7 @@ function createApplicationError(
   options: {
     readonly message?: string
     readonly status?: number
+    readonly retryAfter?: number
     readonly validationErrors?: ApiValidationErrors
   } = {},
 ): ApplicationError {
@@ -71,6 +88,7 @@ function createApplicationError(
     kind,
     message: options.message ?? FALLBACK_MESSAGES[kind],
     status: options.status,
+    retryAfter: options.retryAfter,
     validationErrors: options.validationErrors,
     cause,
   }
@@ -94,6 +112,7 @@ export function normalizeApiError(error: unknown): ApplicationError {
 
   return createApplicationError(kind, error, {
     status,
+    retryAfter: readRetryAfter(data),
     message: readMessage(data),
     validationErrors: kind === 'validation' ? readValidationErrors(data) : undefined,
   })

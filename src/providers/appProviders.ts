@@ -1,9 +1,7 @@
 import type { App } from 'vue'
-import { createPinia } from 'pinia'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { router } from '@/router'
-
-const pinia = createPinia()
+import { pinia } from '@/stores/pinia'
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,6 +19,6 @@ export const queryClient = new QueryClient({
 
 export function registerAppProviders(app: App): void {
   app.use(pinia)
-  app.use(router)
   app.use(VueQueryPlugin, { queryClient })
+  app.use(router)
 }

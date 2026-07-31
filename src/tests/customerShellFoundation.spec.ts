@@ -25,6 +25,8 @@ import {
 import CustomerLayout from '@/layouts/CustomerLayout.vue'
 import { createAppRouter } from '@/router'
 import { DEFAULT_CUSTOMER_BRANCH } from '@/types/customer-shell'
+import { pinia } from '@/stores/pinia'
+import { useAuthStore } from '@/stores/auth'
 
 interface MountedCustomerApp {
   wrapper: VueWrapper
@@ -50,7 +52,7 @@ async function mountCustomerApp(path = '/customer-shell'): Promise<MountedCustom
   await router.isReady()
   const wrapper = mount(App, {
     attachTo: document.body,
-    global: { plugins: [router] },
+    global: { plugins: [pinia, router] },
   })
   mountedWrappers.push(wrapper)
   await flushPromises()
@@ -59,6 +61,7 @@ async function mountCustomerApp(path = '/customer-shell'): Promise<MountedCustom
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  useAuthStore(pinia).resetForTesting()
 })
 
 afterEach(() => {
@@ -205,7 +208,7 @@ describe('customer shell foundation', () => {
     const router = createTestRouter()
     const wrapper = mount(CustomerBranchSelector, {
       props: { selectedBranch: DEFAULT_CUSTOMER_BRANCH },
-      global: { plugins: [router] },
+      global: { plugins: [pinia, router] },
     })
     mountedWrappers.push(wrapper)
 
@@ -386,8 +389,9 @@ describe('customer shell foundation', () => {
     })
     mountedWrappers.push(wrapper)
 
-    expect(wrapper.findAll('nav a')).toHaveLength(5)
-    expect(wrapper.findAll('nav a').map((item) => item.attributes('aria-label'))).toEqual([
+    expect(wrapper.findAll('nav a')).toHaveLength(4)
+    expect(wrapper.findAll('nav [data-navigation-key]')).toHaveLength(5)
+    expect(wrapper.findAll('nav [data-navigation-key]').map((item) => item.attributes('aria-label'))).toEqual([
       'Trang chủ',
       'Sản phẩm',
       'Yêu thích',
@@ -465,7 +469,7 @@ describe('customer shell foundation', () => {
     const router = createTestRouter()
     const wrapper = mount(CustomerHeader, {
       props: { selectedBranch: DEFAULT_CUSTOMER_BRANCH, activeKey: 'home' },
-      global: { plugins: [router] },
+      global: { plugins: [pinia, router] },
     })
     mountedWrappers.push(wrapper)
 
@@ -475,11 +479,53 @@ describe('customer shell foundation', () => {
     expect(wrapper.find('button[aria-label^="Chọn chi nhánh"]').exists()).toBe(true)
   })
 
+  it('logs an authenticated customer out through the existing account action', async () => {
+    const router = createTestRouter()
+    await router.push('/home')
+    await router.isReady()
+    const authStore = useAuthStore(pinia)
+    authStore.$patch({
+      user: {
+        id: 1,
+        name: 'Customer',
+        email: 'customer@example.com',
+        phone: null,
+        avatar: null,
+        role: 'customer',
+        role_label: 'Khách hàng',
+        branch_id: null,
+        email_verified_at: null,
+        created_at: '2026-07-31T00:00:00Z',
+      },
+    })
+    const logout = vi.spyOn(authStore, 'logout').mockImplementation(async () => {
+      authStore.clearSession()
+    })
+    const wrapper = mount(CustomerHeader, {
+      attachTo: document.body,
+      props: { selectedBranch: DEFAULT_CUSTOMER_BRANCH, activeKey: 'home' },
+      global: { plugins: [pinia, router] },
+    })
+    mountedWrappers.push(wrapper)
+
+    await wrapper.get('button[aria-label="Tài khoản của Customer"]').trigger('click')
+    await nextTick()
+    const logoutButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Đăng xuất',
+    )
+    expect(logoutButton).toBeDefined()
+    logoutButton?.click()
+    await flushPromises()
+    expect(logout).toHaveBeenCalledOnce()
+    expect(authStore.user).toBeNull()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/home'))
+  })
+
   it('reserves bottom space for mobile navigation', () => {
     const router = createTestRouter()
     const wrapper = mount(CustomerLayout, {
       slots: { default: '<p>Nội dung</p>' },
-      global: { plugins: [router] },
+      global: { plugins: [pinia, router] },
     })
     mountedWrappers.push(wrapper)
 

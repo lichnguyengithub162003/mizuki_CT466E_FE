@@ -15,6 +15,8 @@ import type {
   LocationWard,
 } from '@/api/locations/locationTypes'
 import type { CheckoutScenario } from '@/types/customer'
+import { useAuthStore } from '@/stores/auth'
+import { pinia } from '@/stores/pinia'
 
 const locationApiMocks = vi.hoisted(() => ({
   listLocationProvinces: vi.fn(),
@@ -134,6 +136,21 @@ async function completeAddressForm(): Promise<void> {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  useAuthStore(pinia).$patch({
+    user: {
+      id: 1,
+      name: 'Customer',
+      email: 'customer@example.com',
+      phone: null,
+      avatar: null,
+      role: 'customer',
+      role_label: 'Khách hàng',
+      branch_id: null,
+      email_verified_at: null,
+      created_at: '2026-07-31T00:00:00Z',
+    },
+    isInitialized: true,
+  })
   locationApiMocks.listLocationProvinces.mockReset().mockResolvedValue(provinces)
   locationApiMocks.listLocationDistricts.mockReset().mockImplementation(
     (provinceId: number) => Promise.resolve(districtsByProvince[provinceId] ?? []),

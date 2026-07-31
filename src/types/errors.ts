@@ -16,6 +16,7 @@ export interface ApplicationError {
   readonly kind: ApplicationErrorKind
   readonly message: string
   readonly status?: number
+  readonly retryAfter?: number
   readonly validationErrors?: ApiValidationErrors
   readonly cause: unknown
 }

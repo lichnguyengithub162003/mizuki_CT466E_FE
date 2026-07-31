@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Grid2X2, Heart, House, ShoppingBag, UserRound } from '@lucide/vue'
+import { Grid2X2, Heart, House, ShoppingBag } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import type { Component } from 'vue'
 import { ROUTE_PATHS } from '@/constants/routes'
 import type { CustomerNavigationKey } from '@/types/customer-shell'
 import { cn } from '@/utils/cn'
+import CustomerAccountControl from './CustomerAccountControl.vue'
 
 const props = defineProps<{
   activeKey: CustomerNavigationKey
@@ -20,7 +21,6 @@ const navigationItems: readonly {
   { key: 'products', label: 'Sản phẩm', to: ROUTE_PATHS.products, icon: Grid2X2 },
   { key: 'favorites', label: 'Yêu thích', to: ROUTE_PATHS.favorites, icon: Heart },
   { key: 'cart', label: 'Giỏ hàng', to: ROUTE_PATHS.cart, icon: ShoppingBag },
-  { key: 'account', label: 'Tài khoản', to: '/customer-shell?section=account', icon: UserRound },
 ]
 </script>
 
@@ -56,6 +56,7 @@ const navigationItems: readonly {
           aria-hidden="true"
         ></span>
       </RouterLink>
+      <CustomerAccountControl mode="mobile" :active="props.activeKey === 'account'" />
     </div>
   </nav>
 </template>

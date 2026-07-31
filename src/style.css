@@ -440,6 +440,18 @@
 }
 
 @layer components {
+  .auth-photo-scrim {
+    background:
+      radial-gradient(ellipse at 22% 82%, rgba(2, 43, 34, 0.78), transparent 62%),
+      rgba(2, 43, 34, 0.1);
+  }
+
+  .auth-onboarding-scrim {
+    background:
+      radial-gradient(ellipse at 50% 100%, rgba(2, 25, 20, 0.82), transparent 58%),
+      rgba(2, 25, 20, 0.12);
+  }
+
   .customer-search-input::-webkit-search-cancel-button,
   .customer-search-input::-webkit-search-decoration {
     appearance: none;

@@ -6,8 +6,53 @@ import {
   type RouteRecordRaw,
 } from 'vue-router'
 import { ROUTE_NAMES, ROUTE_PATHS } from '@/constants/routes'
+import { canAccessResetCode, canAccessResetPassword } from '@/composables/auth/usePasswordRecovery'
+import { useAuthStore } from '@/stores/auth'
+import { pinia } from '@/stores/pinia'
 
 const routes: readonly RouteRecordRaw[] = [
+  {
+    path: ROUTE_PATHS.onboarding,
+    name: ROUTE_NAMES.onboarding,
+    component: () => import('@/pages/auth/OnboardingPage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: ROUTE_PATHS.login,
+    name: ROUTE_NAMES.login,
+    component: () => import('@/pages/auth/LoginPage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: ROUTE_PATHS.register,
+    name: ROUTE_NAMES.register,
+    component: () => import('@/pages/auth/RegisterPage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: ROUTE_PATHS.forgotPassword,
+    name: ROUTE_NAMES.forgotPassword,
+    component: () => import('@/pages/auth/ForgotPasswordPage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: ROUTE_PATHS.verifyResetCode,
+    name: ROUTE_NAMES.verifyResetCode,
+    component: () => import('@/pages/auth/VerifyResetCodePage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: ROUTE_PATHS.resetPassword,
+    name: ROUTE_NAMES.resetPassword,
+    component: () => import('@/pages/auth/ResetPasswordPage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: ROUTE_PATHS.googleCallback,
+    name: ROUTE_NAMES.googleCallback,
+    component: () => import('@/pages/auth/GoogleOAuthCallbackPage.vue'),
+    meta: { layout: 'auth' },
+  },
   {
     path: ROUTE_PATHS.foundation,
     name: ROUTE_NAMES.foundation,
@@ -54,7 +99,7 @@ const routes: readonly RouteRecordRaw[] = [
     path: ROUTE_PATHS.favorites,
     name: ROUTE_NAMES.favorites,
     component: () => import('@/pages/customer/FavoritesPage.vue'),
-    meta: { layout: 'customer' },
+    meta: { layout: 'customer', requiresAuth: true },
   },
   {
     path: ROUTE_PATHS.cart,
@@ -66,7 +111,7 @@ const routes: readonly RouteRecordRaw[] = [
     path: ROUTE_PATHS.checkout,
     name: ROUTE_NAMES.checkout,
     component: () => import('@/pages/customer/CheckoutPage.vue'),
-    meta: { layout: 'customer' },
+    meta: { layout: 'customer', requiresAuth: true },
   },
   {
     path: ROUTE_PATHS.skinCare,
@@ -83,11 +128,60 @@ const routes: readonly RouteRecordRaw[] = [
 ]
 
 export function createAppRouter(history: RouterHistory = createWebHistory()): Router {
-  return createRouter({
+  const appRouter = createRouter({
     history,
     routes,
     scrollBehavior: () => ({ top: 0 }),
   })
+
+  appRouter.beforeEach(async (to) => {
+    const authStore = useAuthStore(pinia)
+
+    if ((to.meta.guestOnly || to.meta.requiresAuth) && !authStore.isInitialized) {
+      await authStore.restoreSession()
+    }
+
+    if (to.meta.guestOnly && authStore.isAuthenticated) {
+      return { name: 'customer-home' }
+    }
+
+    if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+      return {
+        name: ROUTE_NAMES.login,
+        query: { redirect: to.fullPath },
+      }
+    }
+
+    if (to.name === ROUTE_NAMES.verifyResetCode && !canAccessResetCode()) {
+      return { name: ROUTE_NAMES.forgotPassword }
+    }
+
+    if (to.name === ROUTE_NAMES.resetPassword && !canAccessResetPassword()) {
+      return { name: ROUTE_NAMES.forgotPassword }
+    }
+
+    if (
+      to.name === ROUTE_NAMES.login &&
+      typeof to.query.oauth_error !== 'string' &&
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 767px)').matches &&
+      window.localStorage.getItem('mizuki:onboarding-seen') !== 'true'
+    ) {
+      return { name: ROUTE_NAMES.onboarding }
+    }
+
+    if (
+      to.name === ROUTE_NAMES.onboarding &&
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      !window.matchMedia('(max-width: 767px)').matches
+    ) {
+      return { name: ROUTE_NAMES.login }
+    }
+  })
+
+  return appRouter
 }
 
 export const router = createAppRouter()

@@ -1,4 +1,11 @@
 export const ROUTE_NAMES = {
+  onboarding: 'onboarding',
+  login: 'login',
+  register: 'register',
+  forgotPassword: 'forgot-password',
+  verifyResetCode: 'verify-reset-code',
+  resetPassword: 'reset-password',
+  googleCallback: 'google-callback',
   foundation: 'foundation',
   products: 'products',
   productDetail: 'product-detail',
@@ -11,6 +18,13 @@ export const ROUTE_NAMES = {
 } as const
 
 export const ROUTE_PATHS = {
+  onboarding: '/onboarding',
+  login: '/login',
+  register: '/register',
+  forgotPassword: '/forgot-password',
+  verifyResetCode: '/verify-reset-code',
+  resetPassword: '/reset-password',
+  googleCallback: '/auth/google/callback',
   foundation: '/',
   products: '/products',
   productDetail: '/products/:slug',

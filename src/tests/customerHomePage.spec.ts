@@ -326,11 +326,11 @@ describe('customer home page', () => {
     })
     mountedWrappers.push(wrapper)
 
-    expect(wrapper.findAll('nav a')).toHaveLength(5)
-    expect(wrapper.findAll('nav a').every((link) => Boolean(link.attributes('aria-label')))).toBe(
+    expect(wrapper.findAll('nav [data-navigation-key]')).toHaveLength(5)
+    expect(wrapper.findAll('nav [data-navigation-key]').every((item) => Boolean(item.attributes('aria-label')))).toBe(
       true,
     )
-    expect(wrapper.findAll('nav a').every((link) => link.text() === '')).toBe(true)
+    expect(wrapper.findAll('nav [data-navigation-key]').every((item) => item.text() === '')).toBe(true)
   })
 
   it('provides accessible names for important home controls', () => {

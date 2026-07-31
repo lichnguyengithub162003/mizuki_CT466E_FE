@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Heart, ShoppingBag, UserRound } from '@lucide/vue'
+import { Heart, ShoppingBag } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import { ROUTE_NAMES } from '@/constants/routes'
 import type { CustomerBranch, CustomerNavigationKey } from '@/types/customer-shell'
@@ -7,6 +7,7 @@ import CustomerBranchSelector from './CustomerBranchSelector.vue'
 import CustomerDesktopNavigation from './CustomerDesktopNavigation.vue'
 import CustomerLogo from './CustomerLogo.vue'
 import CustomerSearch from './CustomerSearch.vue'
+import CustomerAccountControl from './CustomerAccountControl.vue'
 
 const props = defineProps<{
   selectedBranch: CustomerBranch
@@ -17,6 +18,7 @@ const emit = defineEmits<{
   selectBranch: [branch: CustomerBranch]
   search: [query: string]
 }>()
+
 </script>
 
 <template>
@@ -45,13 +47,7 @@ const emit = defineEmits<{
           <ShoppingBag class="size-5" aria-hidden="true" />
           <span class="absolute right-1.5 top-1.5 grid size-4 place-items-center rounded-full bg-primary-700 text-[0.625rem] font-semibold text-white">2</span>
         </RouterLink>
-        <button
-          type="button"
-          class="motion-interactive grid size-11 place-items-center rounded-xl text-text-secondary hover:bg-primary-50 hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          aria-label="Tài khoản"
-        >
-          <UserRound class="size-5" aria-hidden="true" />
-        </button>
+        <CustomerAccountControl />
       </div>
     </div>
 
