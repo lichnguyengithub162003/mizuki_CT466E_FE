@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ChevronDown, MapPin } from '@lucide/vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { CustomerBranch } from '@/types/customer-shell'
 import { cn } from '@/utils/cn'
+import { pinia } from '@/stores/pinia'
+import { useBranchPreferenceStore } from '@/stores/branchPreference'
 import CustomerBranchDialog from './CustomerBranchDialog.vue'
 
 const props = withDefaults(
@@ -22,6 +24,27 @@ const emit = defineEmits<{
 }>()
 
 const dialogOpen = ref(false)
+const branchStore = useBranchPreferenceStore(pinia)
+const branches = computed<CustomerBranch[]>(() =>
+  branchStore.branches.map((branch) => ({
+    id: branch.id,
+    name: branch.name,
+    address: branch.address,
+    note: branch.phone ?? branch.email ?? '',
+  }) as unknown as CustomerBranch),
+)
+
+function selectBranch(branch: CustomerBranch): void {
+  branchStore.selectBranch(Number(branch.id))
+  emit('select', branch)
+}
+
+function openDialog(): void {
+  dialogOpen.value = true
+  if (branchStore.status === 'idle') {
+    void branchStore.load()
+  }
+}
 </script>
 
 <template>
@@ -35,7 +58,7 @@ const dialogOpen = ref(false)
       props.compact ? 'max-w-36 px-2.5' : 'px-4',
       props.class,
     )"
-    @click="dialogOpen = true"
+    @click="openDialog"
   >
     <MapPin class="size-4.5 shrink-0 text-primary-700" aria-hidden="true" />
     <span class="min-w-0 flex-1">
@@ -50,6 +73,10 @@ const dialogOpen = ref(false)
   <CustomerBranchDialog
     v-model="dialogOpen"
     :selected-branch="props.selectedBranch"
-    @select="emit('select', $event)"
+    :branches="branches"
+    :loading="branchStore.status === 'loading'"
+    :error="branchStore.error"
+    @retry="branchStore.load()"
+    @select="selectBranch"
   />
 </template>

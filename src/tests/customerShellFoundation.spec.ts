@@ -27,6 +27,49 @@ import { createAppRouter } from '@/router'
 import { DEFAULT_CUSTOMER_BRANCH } from '@/types/customer-shell'
 import { pinia } from '@/stores/pinia'
 import { useAuthStore } from '@/stores/auth'
+import {
+  BRANCH_PREFERENCE_KEY,
+  useBranchPreferenceStore,
+} from '@/stores/branchPreference'
+
+const { getBranchesMock } = vi.hoisted(() => ({ getBranchesMock: vi.fn() }))
+
+vi.mock('@/api/branchApi', () => ({
+  getBranches: getBranchesMock,
+}))
+
+const backendBranches = [
+  {
+    id: 1,
+    code: 'MZ-NK-01',
+    name: 'Mizuki Ninh Kiều',
+    address: '51 Đường 3/2, Ninh Kiều, Cần Thơ',
+    phone: '02923730101',
+    email: 'ninhkieu@mizuki.vn',
+    is_active: true,
+    opening_hours: [],
+  },
+  {
+    id: 6,
+    code: 'MZ-VL-01',
+    name: 'Mizuki Vĩnh Long',
+    address: '68 Phạm Thái Bường, Vĩnh Long',
+    phone: '02703730606',
+    email: 'vinhlong@mizuki.vn',
+    is_active: true,
+    opening_hours: [],
+  },
+  {
+    id: 99,
+    code: 'MZ-OFF',
+    name: 'Mizuki Không Hoạt Động',
+    address: 'Địa chỉ không hoạt động',
+    phone: null,
+    email: null,
+    is_active: false,
+    opening_hours: [],
+  },
+]
 
 interface MountedCustomerApp {
   wrapper: VueWrapper
@@ -62,6 +105,15 @@ async function mountCustomerApp(path = '/customer-shell'): Promise<MountedCustom
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
   useAuthStore(pinia).resetForTesting()
+  window.localStorage.clear()
+  getBranchesMock.mockReset()
+  getBranchesMock.mockResolvedValue(backendBranches)
+  useBranchPreferenceStore(pinia).$patch({
+    branches: [],
+    selectedBranchId: null,
+    status: 'idle',
+    error: null,
+  })
 })
 
 afterEach(() => {
@@ -268,6 +320,19 @@ describe('customer shell foundation', () => {
     expect(branchOptions[0]?.textContent).toContain('Mizuki Ninh Kiều')
   })
 
+  it('renders active backend branches without a demo fallback', async () => {
+    const { wrapper } = await mountCustomerApp()
+    await wrapper.findAll('button[aria-label^="Chọn chi nhánh"]')[0]?.trigger('click')
+    await flushPromises()
+
+    const branchOptions = [...document.querySelectorAll<HTMLButtonElement>('button[role="listitem"]')]
+    expect(branchOptions).toHaveLength(2)
+    expect(document.body.textContent).toContain('Mizuki Ninh Kiều')
+    expect(document.body.textContent).toContain('Mizuki Vĩnh Long')
+    expect(document.body.textContent).not.toContain('Mizuki Không Hoạt Động')
+    expect(document.body.textContent).not.toContain('Mizuki Cần Thơ')
+  })
+
   it('updates the selected branch in both responsive headers', async () => {
     const { wrapper } = await mountCustomerApp()
     await wrapper.findAll('button[aria-label^="Chọn chi nhánh"]')[0]?.trigger('click')
@@ -281,6 +346,40 @@ describe('customer shell foundation', () => {
 
     expect(wrapper.findAll('button[aria-label^="Chọn chi nhánh"]').every(
       (button) => button.text().includes('Mizuki Ninh Kiều'),
+    )).toBe(true)
+  })
+
+  it('shows the existing dialog error language and retries the branch API', async () => {
+    getBranchesMock.mockRejectedValueOnce(new Error('network unavailable'))
+    const { wrapper } = await mountCustomerApp()
+    await flushPromises()
+    await wrapper.findAll('button[aria-label^="Chọn chi nhánh"]')[0]?.trigger('click')
+    await nextTick()
+
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      'Không thể tải danh sách chi nhánh',
+    )
+
+    getBranchesMock.mockResolvedValueOnce(backendBranches)
+    const retryButton = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Thử lại',
+    )
+    retryButton?.click()
+    await flushPromises()
+
+    expect(getBranchesMock).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).toContain('Mizuki Ninh Kiều')
+  })
+
+  it('restores the saved real branch in the unchanged desktop and mobile headers', async () => {
+    window.localStorage.setItem(BRANCH_PREFERENCE_KEY, '6')
+    const { wrapper } = await mountCustomerApp()
+    await useBranchPreferenceStore(pinia).load()
+    await flushPromises()
+
+    expect(wrapper.findAll('header')).toHaveLength(2)
+    expect(wrapper.findAll('button[aria-label^="Chọn chi nhánh"]').every(
+      (button) => button.text().includes('Mizuki Vĩnh Long'),
     )).toBe(true)
   })
 

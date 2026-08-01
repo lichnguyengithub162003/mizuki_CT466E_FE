@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   CustomerAnnouncementBar,
@@ -12,10 +12,11 @@ import {
 } from '@/components/customer-shell'
 import { ROUTE_NAMES } from '@/constants/routes'
 import {
-  DEFAULT_CUSTOMER_BRANCH,
   type CustomerBranch,
   type CustomerNavigationKey,
 } from '@/types/customer-shell'
+import { pinia } from '@/stores/pinia'
+import { useBranchPreferenceStore } from '@/stores/branchPreference'
 
 defineSlots<{
   default?: () => unknown
@@ -33,7 +34,30 @@ withDefaults(
 )
 
 const route = useRoute()
-const selectedBranch = ref<CustomerBranch>(DEFAULT_CUSTOMER_BRANCH)
+const branchStore = useBranchPreferenceStore(pinia)
+branchStore.restore()
+if (import.meta.env.MODE !== 'test') {
+  void branchStore.load()
+}
+
+const selectedBranch = computed<CustomerBranch>(() => {
+  const branch = branchStore.selectedBranch
+  if (!branch) {
+    return {
+      id: 0,
+      name: 'Chọn chi nhánh',
+      address: '',
+      note: '',
+    } as unknown as CustomerBranch
+  }
+
+  return {
+    id: branch.id,
+    name: branch.name,
+    address: branch.address,
+    note: branch.phone ?? branch.email ?? '',
+  } as unknown as CustomerBranch
+})
 const activeKey = computed<CustomerNavigationKey>(() => {
   if (route.name === ROUTE_NAMES.products || route.name === ROUTE_NAMES.productDetail) {
     return 'products'
@@ -70,8 +94,9 @@ const activeKey = computed<CustomerNavigationKey>(() => {
 })
 
 function updateBranch(branch: CustomerBranch): void {
-  selectedBranch.value = branch
+  branchStore.selectBranch(Number(branch.id))
 }
+
 </script>
 
 <template>

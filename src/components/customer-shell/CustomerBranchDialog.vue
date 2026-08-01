@@ -3,27 +3,28 @@ import { Check, MapPin, Search } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import BaseInput from '@/components/common/BaseInput.vue'
-import {
-  CUSTOMER_BRANCHES,
-  type CustomerBranch,
-} from '@/types/customer-shell'
+import type { CustomerBranch } from '@/types/customer-shell'
 import { cn } from '@/utils/cn'
 
 const props = defineProps<{
   selectedBranch: CustomerBranch
+  branches: CustomerBranch[]
+  loading?: boolean
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
   select: [branch: CustomerBranch]
+  retry: []
 }>()
 
 const open = defineModel<boolean>({ default: false })
 const searchQuery = ref('')
 const filteredBranches = computed(() => {
   const normalizedQuery = searchQuery.value.trim().toLocaleLowerCase('vi')
-  if (!normalizedQuery) return CUSTOMER_BRANCHES
+  if (!normalizedQuery) return props.branches
 
-  return CUSTOMER_BRANCHES.filter((branch) =>
+  return props.branches.filter((branch) =>
     `${branch.name} ${branch.address}`.toLocaleLowerCase('vi').includes(normalizedQuery),
   )
 })
@@ -42,7 +43,7 @@ function selectBranch(branch: CustomerBranch): void {
   <BaseDialog
     v-model="open"
     title="Chọn chi nhánh Mizuki"
-    description="Chọn chi nhánh để xem trải nghiệm mua sắm phù hợp. Danh sách hiện tại chỉ dùng cho bản trình diễn."
+    description="Chọn chi nhánh để xem trải nghiệm mua sắm phù hợp."
     close-label="Đóng chọn chi nhánh"
     class="max-w-xl rounded-3xl border-white/80 bg-background/96 p-5 shadow-lg sm:p-7"
   >
@@ -57,9 +58,31 @@ function selectBranch(branch: CustomerBranch): void {
         <template #prefix><Search class="size-4" /></template>
       </BaseInput>
 
-      <div class="grid gap-2" role="list" aria-label="Danh sách chi nhánh demo">
+      <div class="grid gap-2" role="list" aria-label="Danh sách chi nhánh Mizuki">
+        <p
+          v-if="props.loading"
+          class="rounded-2xl border border-dashed border-border bg-surface-subtle px-4 py-8 text-center text-body-sm text-muted-foreground"
+        >
+          Đang tải danh sách chi nhánh…
+        </p>
+
+        <div
+          v-else-if="props.error"
+          class="rounded-2xl border border-dashed border-border bg-surface-subtle px-4 py-6 text-center"
+          role="alert"
+        >
+          <p class="text-body-sm text-muted-foreground">{{ props.error }}</p>
+          <button
+            type="button"
+            class="motion-interactive mt-3 rounded-xl bg-primary-700 px-4 py-2 text-body-sm font-semibold text-white hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            @click="emit('retry')"
+          >
+            Thử lại
+          </button>
+        </div>
+
         <button
-          v-for="branch in filteredBranches"
+          v-for="branch in props.loading || props.error ? [] : filteredBranches"
           :key="branch.id"
           type="button"
           role="listitem"
@@ -92,7 +115,7 @@ function selectBranch(branch: CustomerBranch): void {
         </button>
 
         <p
-          v-if="filteredBranches.length === 0"
+          v-if="!props.loading && !props.error && filteredBranches.length === 0"
           class="rounded-2xl border border-dashed border-border bg-surface-subtle px-4 py-8 text-center text-body-sm text-muted-foreground"
         >
           Không tìm thấy chi nhánh phù hợp.
