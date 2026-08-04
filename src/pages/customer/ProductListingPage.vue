@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  ProductFeaturedCategories,
   ProductFilterDialog,
   ProductFilterPanel,
   ProductListingGrid,
@@ -10,120 +9,325 @@ import {
   ProductListingToolbar,
   ProductSuggestions,
 } from '@/components/products'
-import {
-  defaultProductFilters,
-  featuredProductCategories,
-  productBrandPromotions,
-  productCategories,
-  productCategorySummary,
-  productListingBanner,
-  productListingProducts,
-  productSortOptions,
-  suggestedProducts,
-} from '@/data/products/productListingDemoData'
+import type { ProductListingRequest } from '@/api/productListingApi'
+import { resolveCatalogAsset } from '@/api/productListingAdapter'
 import { ROUTE_NAMES } from '@/constants/routes'
 import CustomerLayout from '@/layouts/CustomerLayout.vue'
+import {
+  useProductDiscoveryQuery,
+  useProductListingQuery,
+} from '@/queries/productListing'
+import { pinia } from '@/stores/pinia'
+import { useBranchPreferenceStore } from '@/stores/branchPreference'
 import type {
+  ProductBackendSort,
+  ProductContentState,
   ProductFilterState,
   ProductListingProduct,
-  ProductPriceRange,
   ProductSortKey,
+  ProductSortOption,
 } from '@/types/products'
 
-const INITIAL_VISIBLE_COUNT = 12
-const LOAD_MORE_COUNT = 8
-const router = useRouter()
+const PER_PAGE = 24
+const SUPPORTED_SORTS: readonly ProductBackendSort[] = [
+  'newest',
+  'price_asc',
+  'price_desc',
+  'rating',
+  'name',
+]
+const listingSortOptions: readonly ProductSortOption[] = [
+  { value: 'newest', label: 'Mới nhất' },
+  { value: 'price_asc', label: 'Giá tăng dần' },
+  { value: 'price_desc', label: 'Giá giảm dần' },
+  { value: 'rating', label: 'Đánh giá' },
+  { value: 'name', label: 'Tên sản phẩm' },
+]
+interface FilterCategoryOption {
+  id: string
+  label: string
+  children: FilterCategoryOption[]
+}
 
-const filters = ref<ProductFilterState>({ ...defaultProductFilters })
-const sort = ref<ProductSortKey>('popular')
-const visibleCount = ref(INITIAL_VISIBLE_COUNT)
+interface FilterBrandOption {
+  id: string
+  label: string
+}
+
+interface BrandConveyorItem {
+  id: string
+  name: string
+  logoUrl?: string
+}
+
+type ActiveFilterKey = 'keyword' | 'category' | 'brand' | 'in_stock' | 'sort'
+
+interface ActiveFilterChip {
+  key: ActiveFilterKey
+  label: string
+}
+
+type PaginationItem = number | 'start-ellipsis' | 'end-ellipsis'
+
+const route = useRoute()
+const router = useRouter()
+const branchStore = useBranchPreferenceStore(pinia)
 const mobileFilterOpen = ref(false)
 
-function matchesPriceRange(price: number, range: ProductPriceRange): boolean {
-  if (range === 'under-200') return price < 200_000
-  if (range === '200-500') return price >= 200_000 && price <= 500_000
-  if (range === '500-1000') return price > 500_000 && price <= 1_000_000
-  if (range === 'over-1000') return price > 1_000_000
-  return true
+branchStore.restore()
+
+function firstQueryValue(value: unknown): string | undefined {
+  if (Array.isArray(value)) return firstQueryValue(value[0])
+  return typeof value === 'string' ? value : undefined
 }
 
-function matchesFilters(product: ProductListingProduct): boolean {
-  const currentFilters = filters.value
-  const categoryMatches = currentFilters.categoryIds.length === 0
-    || currentFilters.categoryIds.includes(product.categoryId)
-  const brandMatches = currentFilters.brandIds.length === 0
-    || currentFilters.brandIds.includes(product.brandId)
-  const concernMatches = currentFilters.concernIds.length === 0
-    || currentFilters.concernIds.some((concern) => product.concernIds.includes(concern))
-  const ratingMatches = currentFilters.minimumRating === null
-    || (product.rating ?? 0) >= currentFilters.minimumRating
-  const highlightMatches = currentFilters.highlights.every((highlight) => {
-    if (highlight === 'discounted') return product.discountPercent !== undefined
-    if (highlight === 'bestseller') return product.isBestseller
-    return product.isNew
-  })
-  const stockMatches = !currentFilters.inStockOnly || product.stockState !== 'sold_out'
-
-  return categoryMatches
-    && brandMatches
-    && concernMatches
-    && matchesPriceRange(product.price, currentFilters.priceRange)
-    && ratingMatches
-    && highlightMatches
-    && stockMatches
+function positiveInteger(value: unknown): number | undefined {
+  const rawValue = firstQueryValue(value)
+  if (!rawValue || !/^\d+$/.test(rawValue)) return undefined
+  const parsedValue = Number(rawValue)
+  return Number.isSafeInteger(parsedValue) && parsedValue > 0 ? parsedValue : undefined
 }
 
-function sortProducts(products: readonly ProductListingProduct[]): ProductListingProduct[] {
-  return [...products].sort((first, second) => {
-    if (sort.value === 'price-ascending') return first.price - second.price
-    if (sort.value === 'price-descending') return second.price - first.price
-    if (sort.value === 'newest') return second.createdOrder - first.createdOrder
-    if (sort.value === 'best-selling') return (second.soldCount ?? 0) - (first.soldCount ?? 0)
-    return second.popularity - first.popularity
-  })
+function parseSort(value: unknown): ProductBackendSort {
+  const candidate = firstQueryValue(value)
+  return SUPPORTED_SORTS.includes(candidate as ProductBackendSort)
+    ? candidate as ProductBackendSort
+    : 'newest'
 }
 
-const filteredProducts = computed(() =>
-  sortProducts(productListingProducts.filter(matchesFilters)),
+const keyword = computed(() => firstQueryValue(route.query.keyword)?.trim() || undefined)
+const categoryId = computed(() => positiveInteger(route.query.category_id))
+const brandId = computed(() => positiveInteger(route.query.brand_id))
+const currentPage = computed(() => positiveInteger(route.query.page) ?? 1)
+const inStockOnly = computed(() => {
+  const value = firstQueryValue(route.query.in_stock)
+  return value === '1' || value === 'true'
+})
+const sort = computed<ProductBackendSort>(() => parseSort(route.query.sort))
+
+const request = computed<ProductListingRequest>(() => ({
+  ...(keyword.value ? { keyword: keyword.value } : {}),
+  ...(categoryId.value ? { category_id: categoryId.value } : {}),
+  ...(brandId.value ? { brand_id: brandId.value } : {}),
+  ...(branchStore.selectedBranchId ? { branch_id: branchStore.selectedBranchId } : {}),
+  ...(inStockOnly.value ? { in_stock: true } : {}),
+  sort: sort.value,
+  page: currentPage.value,
+  per_page: PER_PAGE,
+}))
+const listingReady = computed(
+  () => branchStore.status === 'success' || branchStore.status === 'error',
 )
-const visibleProducts = computed(() => filteredProducts.value.slice(0, visibleCount.value))
-const hasMoreProducts = computed(() => visibleProducts.value.length < filteredProducts.value.length)
-const contentState = computed(() => filteredProducts.value.length === 0 ? 'empty' as const : 'success' as const)
-const activeFilterCount = computed(() => {
-  const currentFilters = filters.value
-  return currentFilters.categoryIds.length
-    + currentFilters.brandIds.length
-    + currentFilters.concernIds.length
-    + currentFilters.highlights.length
-    + (currentFilters.priceRange === 'all' ? 0 : 1)
-    + (currentFilters.minimumRating === null ? 0 : 1)
-    + (currentFilters.inStockOnly ? 1 : 0)
+const listingQuery = useProductListingQuery(request, listingReady)
+const discoveryQuery = useProductDiscoveryQuery()
+
+const rootCategories = computed(() => discoveryQuery.data.value?.categories ?? [])
+const discoveryBrands = computed(() => {
+  const brands = discoveryQuery.data.value?.brands ?? []
+  const selected = brands.find((brand) => brand.id === brandId.value)
+  const withLogos = brands.filter((brand) => brand.logo && brand.name !== '9Wishes')
+  return [...new Map(
+    [selected, ...withLogos]
+      .filter((brand): brand is NonNullable<typeof brand> => brand !== undefined && brand.name !== '9Wishes' && Boolean(brand.logo))
+      .map((brand) => [brand.id, brand]),
+  ).values()].slice(0, 15)
+})
+const suggestionRequest = computed<ProductListingRequest>(() => ({
+  ...(branchStore.selectedBranchId ? { branch_id: branchStore.selectedBranchId } : {}),
+  sort: 'rating',
+  page: 1,
+  per_page: 8,
+}))
+const suggestionsQuery = useProductListingQuery(suggestionRequest, listingReady)
+
+const products = computed(() => listingQuery.data.value?.products ?? [])
+const pagination = computed(() => listingQuery.data.value?.pagination ?? {
+  currentPage: currentPage.value,
+  perPage: PER_PAGE,
+  total: 0,
+  lastPage: 1,
+})
+const contentState = computed<ProductContentState>(() => {
+  if (listingQuery.isPending.value || !listingReady.value) return 'loading'
+  if (listingQuery.isError.value) return 'error'
+  return products.value.length === 0 ? 'empty' : 'success'
+})
+const filters = computed<ProductFilterState>(() => ({
+  categoryIds: categoryId.value ? [String(categoryId.value)] : [],
+  brandIds: brandId.value ? [String(brandId.value)] : [],
+  concernIds: [],
+  priceRange: 'all',
+  minimumRating: null,
+  highlights: [],
+  inStockOnly: inStockOnly.value,
+}))
+const filterCategories = computed<FilterCategoryOption[]>(() => {
+  const mapCategory = (category: (typeof rootCategories.value)[number]): FilterCategoryOption => ({
+    id: String(category.id),
+    label: category.name,
+    children: category.children.map(mapCategory),
+  })
+  return rootCategories.value.map(mapCategory)
+})
+const filterBrands = computed<FilterBrandOption[]>(() => (
+  discoveryQuery.data.value?.brands ?? []
+).map((brand) => ({ id: String(brand.id), label: brand.name })))
+const productBrandPromotions = computed<BrandConveyorItem[]>(() => (
+  discoveryBrands.value.map((brand) => ({
+    id: String(brand.id),
+    name: brand.name,
+    logoUrl: resolveCatalogAsset(brand.logo),
+  }))
+))
+const selectedCategoryLabel = computed(() => {
+  const findLabel = (categories: readonly FilterCategoryOption[]): string | undefined => {
+    for (const category of categories) {
+      if (category.id === String(categoryId.value)) return category.label
+      const nested = findLabel(category.children)
+      if (nested) return nested
+    }
+    return undefined
+  }
+  return findLabel(filterCategories.value)
+})
+const selectedBrandLabel = computed(
+  () => filterBrands.value.find((brand) => brand.id === String(brandId.value))?.label,
+)
+const activeFilterChips = computed<ActiveFilterChip[]>(() => {
+  const chips: ActiveFilterChip[] = []
+  if (keyword.value) chips.push({ key: 'keyword', label: keyword.value })
+  if (categoryId.value) {
+    chips.push({ key: 'category', label: selectedCategoryLabel.value ?? 'Danh mục đã chọn' })
+  }
+  if (brandId.value) {
+    chips.push({ key: 'brand', label: selectedBrandLabel.value ?? 'Thương hiệu đã chọn' })
+  }
+  if (inStockOnly.value) chips.push({ key: 'in_stock', label: 'Còn hàng' })
+  if (sort.value !== 'newest') {
+    const sortLabel = listingSortOptions.find((option) => option.value === sort.value)?.label
+    if (sortLabel) chips.push({ key: 'sort', label: sortLabel })
+  }
+  return chips
+})
+const activeFilterCount = computed(() => activeFilterChips.value.length)
+const resetDisabled = computed(
+  () => activeFilterChips.value.length === 0 && currentPage.value === 1,
+)
+const suggestions = computed(() => suggestionsQuery.data.value?.products ?? [])
+const suggestionsState = computed<ProductContentState>(() => {
+  if (suggestionsQuery.isPending.value || !listingReady.value) return 'loading'
+  if (suggestionsQuery.isError.value) return 'error'
+  return suggestions.value.length === 0 ? 'empty' : 'success'
+})
+const discoveryState = computed<ProductContentState>(() => {
+  if (discoveryQuery.isPending.value) return 'loading'
+  if (discoveryQuery.isError.value) return 'error'
+  return rootCategories.value.length === 0 || filterBrands.value.length === 0 ? 'empty' : 'success'
+})
+const paginationItems = computed<PaginationItem[]>(() => {
+  const lastPage = Math.max(1, pagination.value.lastPage)
+  const activePage = Math.min(Math.max(1, pagination.value.currentPage), lastPage)
+  if (lastPage <= 7) return Array.from({ length: lastPage }, (_, index) => index + 1)
+
+  const pages = [...new Set([1, lastPage, activePage - 1, activePage, activePage + 1])]
+    .filter((page) => page >= 1 && page <= lastPage)
+    .sort((left, right) => left - right)
+  const items: PaginationItem[] = []
+  pages.forEach((page, index) => {
+    const previous = pages[index - 1]
+    if (previous !== undefined && page - previous > 1) {
+      items.push(previous === 1 ? 'start-ellipsis' : 'end-ellipsis')
+    }
+    items.push(page)
+  })
+  return items
 })
 
-watch([filters, sort], () => {
-  visibleCount.value = INITIAL_VISIBLE_COUNT
-}, { deep: true })
+function numericFilterId(values: readonly string[]): string | undefined {
+  const value = values.find((candidate) => /^\d+$/.test(candidate) && Number(candidate) > 0)
+  return value
+}
+
+async function updateRouteQuery(
+  changes: Record<string, string | undefined>,
+  scrollTarget: 'preserve' | 'results' = 'preserve',
+): Promise<void> {
+  const nextQuery = { ...route.query }
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) delete nextQuery[key]
+    else nextQuery[key] = value
+  }
+  const location = { name: ROUTE_NAMES.products, query: nextQuery }
+  if (router.resolve(location).fullPath === route.fullPath) return
+
+  const preservedScrollY = typeof window === 'undefined' ? 0 : window.scrollY
+  const defaultScrollBehavior = router.options.scrollBehavior
+  router.options.scrollBehavior = () => false
+  try {
+    await router.push(location)
+  } finally {
+    router.options.scrollBehavior = defaultScrollBehavior
+  }
+  await nextTick()
+
+  if (scrollTarget === 'results') {
+    document.getElementById('product-results-heading')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  } else if (preservedScrollY > 0 && Math.abs(window.scrollY - preservedScrollY) > 1) {
+    window.scrollTo({ top: preservedScrollY, behavior: 'auto' })
+  }
+}
 
 function updateFilters(nextFilters: ProductFilterState): void {
-  filters.value = nextFilters
+  void updateRouteQuery({
+    category_id: numericFilterId(nextFilters.categoryIds),
+    brand_id: numericFilterId(nextFilters.brandIds),
+    in_stock: nextFilters.inStockOnly ? '1' : undefined,
+    page: '1',
+  })
 }
 
 function resetFilters(): void {
-  filters.value = { ...defaultProductFilters }
-}
-
-function toggleCategory(categoryId: string): void {
-  const categoryIds = filters.value.categoryIds
-  updateFilters({
-    ...filters.value,
-    categoryIds: categoryIds.includes(categoryId)
-      ? categoryIds.filter((id) => id !== categoryId)
-      : [...categoryIds, categoryId],
+  void updateRouteQuery({
+    keyword: undefined,
+    category_id: undefined,
+    brand_id: undefined,
+    in_stock: undefined,
+    sort: undefined,
+    page: '1',
   })
 }
 
-function loadMore(): void {
-  visibleCount.value += LOAD_MORE_COUNT
+function removeFilterChip(key: ActiveFilterKey): void {
+  const queryKey = key === 'category'
+    ? 'category_id'
+    : key === 'brand'
+      ? 'brand_id'
+      : key
+  void updateRouteQuery({ [queryKey]: undefined, page: '1' })
+}
+
+function toggleBrand(brand: string): void {
+  if (!/^\d+$/.test(brand)) return
+  void updateRouteQuery({
+    brand_id: brandId.value === Number(brand) ? undefined : brand,
+    page: '1',
+  })
+}
+
+function updateSort(nextSort: ProductSortKey): void {
+  const normalizedSort = SUPPORTED_SORTS.includes(nextSort as ProductBackendSort)
+    ? nextSort as ProductBackendSort
+    : 'newest'
+  void updateRouteQuery({ sort: normalizedSort, page: '1' })
+}
+
+function goToPage(page: number): void {
+  const normalizedPage = Math.min(Math.max(1, page), pagination.value.lastPage)
+  if (normalizedPage === pagination.value.currentPage) return
+  void updateRouteQuery({ page: String(normalizedPage) }, 'results')
 }
 
 function openProductDetail(product: ProductListingProduct): void {
@@ -132,21 +336,37 @@ function openProductDetail(product: ProductListingProduct): void {
     params: { slug: product.slug },
   })
 }
+
+watch(
+  () => listingQuery.data.value?.pagination.lastPage,
+  (lastPage) => {
+    if (lastPage && currentPage.value > lastPage) {
+      void router.replace({
+        name: ROUTE_NAMES.products,
+        query: { ...route.query, page: String(lastPage) },
+      })
+    }
+  },
+)
+
+watch(
+  () => branchStore.selectedBranchId,
+  (nextBranchId, previousBranchId) => {
+    if (previousBranchId !== null && nextBranchId !== previousBranchId && currentPage.value !== 1) {
+      void updateRouteQuery({ page: '1' })
+    }
+  },
+)
 </script>
 
 <template>
   <CustomerLayout>
     <div class="mx-auto w-full max-w-[90rem] px-4 py-5 sm:px-5 md:py-7 lg:px-7">
       <ProductListingHero
-        :banner="productListingBanner"
         :brands="productBrandPromotions"
-        :categories="productCategories"
-        :summary="productCategorySummary"
-        :selected-category-ids="filters.categoryIds"
-        @toggle-category="toggleCategory"
+        :selected-brand-id="brandId ? String(brandId) : undefined"
+        @select-brand="toggleBrand"
       />
-
-      <ProductFeaturedCategories class="mt-9" :categories="featuredProductCategories" />
 
       <section
         id="product-results"
@@ -155,65 +375,144 @@ function openProductDetail(product: ProductListingProduct): void {
       >
         <div class="mb-5">
           <p class="text-caption font-semibold uppercase tracking-[0.14em] text-primary-700">
-            Dễ lọc, dễ chọn
+            Chọn đúng sản phẩm, mua sắm thuận tiện
           </p>
           <h2 id="product-results-heading" class="mt-1 text-heading-2">Khám phá sản phẩm</h2>
         </div>
 
         <div class="grid items-start gap-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
           <aside
-            class="sticky top-4 hidden max-h-[calc(100svh-2rem)] overflow-y-auto rounded-2xl border border-border bg-surface p-4 shadow-xs lg:block"
+            class="sticky top-36 hidden max-h-[calc(100svh-10rem)] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-surface p-4 shadow-xs lg:block"
             aria-label="Bộ lọc sản phẩm desktop"
             data-testid="desktop-product-filters"
           >
             <ProductFilterPanel
               :filters="filters"
+              :categories="filterCategories"
+              :brands="filterBrands"
+              :options-state="discoveryState"
+              :reset-disabled="resetDisabled"
               @update="updateFilters"
               @reset="resetFilters"
+              @retry-options="discoveryQuery.refetch()"
             />
           </aside>
 
           <div class="min-w-0">
-            <ProductListingToolbar
-              :result-count="filteredProducts.length"
-              :active-filter-count="activeFilterCount"
-              :sort-options="productSortOptions"
-              :sort="sort"
-              @open-filters="mobileFilterOpen = true"
-              @update-sort="sort = $event"
-            />
-
-            <ProductListingGrid
-              class="mt-5"
-              :products="visibleProducts"
-              :state="contentState"
-              @retry="resetFilters"
-              @select="openProductDetail"
-            />
-
-            <div v-if="hasMoreProducts" class="mt-7 flex justify-center">
+            <div
+              v-if="activeFilterChips.length > 0"
+              class="mb-3 flex flex-wrap items-center gap-2"
+              aria-label="Bộ lọc đang áp dụng"
+              data-testid="active-filter-chips"
+            >
+              <button
+                v-for="chip in activeFilterChips"
+                :key="chip.key"
+                type="button"
+                class="motion-interactive inline-flex min-h-9 items-center gap-1 rounded-pill border border-primary-200 bg-primary-50 px-3 text-body-sm font-medium text-primary-900 hover:bg-primary-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                :aria-label="'Xóa bộ lọc ' + chip.label"
+                :data-filter-chip="chip.key"
+                @click="removeFilterChip(chip.key)"
+              >
+                {{ chip.label }}
+                <span aria-hidden="true">×</span>
+              </button>
               <button
                 type="button"
-                class="motion-interactive min-h-11 rounded-xl border border-primary-200 bg-surface px-6 text-body-sm font-semibold text-primary-800 hover:border-primary-400 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                data-testid="load-more-products"
-                @click="loadMore"
+                class="motion-interactive min-h-9 rounded-pill px-3 text-body-sm font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                data-testid="clear-all-product-filters"
+                @click="resetFilters"
               >
-                Xem thêm sản phẩm
+                Xóa tất cả
               </button>
             </div>
+
+            <ProductListingToolbar
+              :result-count="pagination.total"
+              :active-filter-count="activeFilterCount"
+              :sort-options="listingSortOptions"
+              :sort="sort"
+              @open-filters="mobileFilterOpen = true"
+              @update-sort="updateSort"
+            />
+
+            <div class="relative mt-5" aria-live="polite">
+              <ProductListingGrid
+                :products="products"
+                :state="contentState"
+                @retry="listingQuery.refetch()"
+                @select="openProductDetail"
+              />
+              <div
+                v-if="listingQuery.isFetching.value && products.length > 0"
+                class="pointer-events-none absolute inset-0 rounded-2xl bg-background/35 backdrop-blur-[1px]"
+                data-testid="product-results-refreshing"
+                aria-label="Đang cập nhật kết quả sản phẩm"
+              />
+            </div>
+
+            <nav
+              v-if="pagination.lastPage > 1"
+              class="mt-7 flex flex-wrap items-center justify-center gap-2"
+              aria-label="Phân trang sản phẩm"
+              data-testid="product-pagination"
+            >
+              <button
+                type="button"
+                class="motion-interactive min-h-10 rounded-xl border border-border bg-surface px-3 text-body-sm font-semibold text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="pagination.currentPage <= 1 || listingQuery.isFetching.value"
+                aria-label="Trang trước"
+                @click="goToPage(pagination.currentPage - 1)"
+              >
+                Trước
+              </button>
+              <template v-for="item in paginationItems" :key="item">
+                <span v-if="typeof item !== 'number'" class="px-1 text-text-muted" aria-hidden="true">…</span>
+                <button
+                  v-else
+                  type="button"
+                  :aria-label="`Trang ${item}`"
+                  :aria-current="pagination.currentPage === item ? 'page' : undefined"
+                  :disabled="pagination.currentPage === item || listingQuery.isFetching.value"
+                  class="motion-interactive grid size-10 place-items-center rounded-xl border border-border bg-surface text-body-sm font-semibold text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-current:border-primary-800 aria-current:bg-primary-800 aria-current:text-primary-foreground disabled:cursor-default"
+                  @click="goToPage(item)"
+                >
+                  {{ item }}
+                </button>
+              </template>
+              <button
+                type="button"
+                class="motion-interactive min-h-10 rounded-xl border border-border bg-surface px-3 text-body-sm font-semibold text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="pagination.currentPage >= pagination.lastPage || listingQuery.isFetching.value"
+                aria-label="Trang sau"
+                @click="goToPage(pagination.currentPage + 1)"
+              >
+                Sau
+              </button>
+            </nav>
           </div>
         </div>
       </section>
 
-      <ProductSuggestions class="my-12" :products="suggestedProducts" />
+      <ProductSuggestions
+        class="my-12"
+        :products="suggestions"
+        :state="suggestionsState"
+        @retry="suggestionsQuery.refetch()"
+      />
     </div>
 
     <ProductFilterDialog
       v-model="mobileFilterOpen"
       :filters="filters"
-      :result-count="filteredProducts.length"
+      :categories="filterCategories"
+      :brands="filterBrands"
+      :options-state="discoveryState"
+      :result-count="pagination.total"
+      :reset-disabled="resetDisabled"
       @apply="updateFilters"
       @reset="resetFilters"
+      @retry-options="discoveryQuery.refetch()"
     />
   </CustomerLayout>
 </template>

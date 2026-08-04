@@ -18,4 +18,5 @@ export const ENDPOINTS = {
   locationWards: (districtId: number) =>
     `/locations/districts/${districtId}/wards`,
   branches: '/branches',
+  products: '/products',
 } as const

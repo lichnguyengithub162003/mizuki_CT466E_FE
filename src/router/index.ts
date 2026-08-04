@@ -120,6 +120,18 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer' },
   },
   {
+    path: ROUTE_PATHS.voucherCenter,
+    name: ROUTE_NAMES.voucherCenter,
+    component: () => import('@/pages/customer/VoucherCenterPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
+    path: ROUTE_PATHS.wallet,
+    name: ROUTE_NAMES.wallet,
+    component: () => import('@/pages/customer/WalletPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: ROUTE_NAMES.notFound,
     component: () => import('@/pages/foundation/NotFoundPage.vue'),

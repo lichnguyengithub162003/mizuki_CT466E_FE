@@ -6,6 +6,12 @@ export type ProductSortKey =
   | 'price-ascending'
   | 'price-descending'
   | 'best-selling'
+  | 'price_asc'
+  | 'price_desc'
+  | 'rating'
+  | 'name'
+
+export type ProductBackendSort = 'newest' | 'price_asc' | 'price_desc' | 'rating' | 'name'
 
 export type ProductPriceRange =
   | 'all'
@@ -98,11 +104,12 @@ export interface ProductListingProduct extends HomeProduct {
   readonly slug: string
   readonly categoryId: string
   readonly brandId: string
-  readonly concernIds: readonly string[]
-  readonly isNew: boolean
-  readonly isBestseller: boolean
-  readonly popularity: number
-  readonly createdOrder: number
+  readonly imageUrl?: string
+  readonly concernIds?: readonly string[]
+  readonly isNew?: boolean
+  readonly isBestseller?: boolean
+  readonly popularity?: number
+  readonly createdOrder?: number
 }
 
 export type ProductContentState = 'success' | 'loading' | 'empty' | 'error'
@@ -114,6 +121,7 @@ export interface ProductDetailImage {
   readonly label: string
   readonly alt: string
   readonly tone: 'sage' | 'mint' | 'sand' | 'rose' | 'sky'
+  readonly imageUrl?: string
 }
 
 export interface ProductDetailVariantOption {

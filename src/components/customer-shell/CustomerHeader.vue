@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Heart, ShoppingBag } from '@lucide/vue'
+import { Heart, MessageCircle, ShoppingBag } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import { ROUTE_NAMES } from '@/constants/routes'
 import type { CustomerBranch, CustomerNavigationKey } from '@/types/customer-shell'
@@ -30,6 +30,13 @@ const emit = defineEmits<{
       <CustomerLogo />
       <CustomerSearch class="min-w-0 flex-1" @submit="emit('search', $event)" />
       <div class="flex shrink-0 items-center gap-1">
+        <RouterLink
+          :to="{ path: '/customer-shell', query: { section: 'support' } }"
+          class="motion-interactive grid size-11 place-items-center rounded-xl text-text-secondary hover:bg-primary-50 hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          aria-label="Trò chuyện hỗ trợ"
+        >
+          <MessageCircle class="size-5" aria-hidden="true" />
+        </RouterLink>
         <RouterLink
           :to="{ name: ROUTE_NAMES.favorites }"
           class="motion-interactive grid size-11 place-items-center rounded-xl text-text-secondary hover:bg-primary-50 hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

@@ -1,19 +1,34 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import { defaultProductFilters } from '@/data/products/productListingDemoData'
-import type { ProductFilterState } from '@/types/products'
+import type { ProductContentState, ProductFilterState } from '@/types/products'
 import ProductFilterPanel from './ProductFilterPanel.vue'
+
+interface CategoryOption {
+  id: string
+  label: string
+  children: readonly CategoryOption[]
+}
 
 const props = defineProps<{
   filters: ProductFilterState
+  categories: readonly CategoryOption[]
+  brands: readonly { id: string; label: string; slug?: string }[]
+  optionsState: ProductContentState
   resultCount: number
+  resetDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
   apply: [filters: ProductFilterState]
   reset: []
+  retryOptions: []
 }>()
+
+const defaultProductFilters: ProductFilterState = {
+  categoryIds: [], brandIds: [], concernIds: [], priceRange: 'all',
+  minimumRating: null, highlights: [], inStockOnly: false,
+}
 
 const open = defineModel<boolean>({ default: false })
 const draftFilters = ref<ProductFilterState>(cloneFilters(props.filters))
@@ -53,8 +68,12 @@ function resetFilters(): void {
   >
     <ProductFilterPanel
       :filters="draftFilters"
+      :categories="props.categories"
+      :brands="props.brands"
+      :options-state="props.optionsState"
       :show-reset="false"
       @update="draftFilters = $event"
+      @retry-options="$emit('retryOptions')"
     />
 
     <div class="sticky -bottom-5 mt-5 grid grid-cols-2 gap-3 border-t border-border bg-background/96 pb-1 pt-4 backdrop-blur">
@@ -62,6 +81,7 @@ function resetFilters(): void {
         type="button"
         class="motion-interactive min-h-11 rounded-xl border border-border bg-surface px-4 text-body-sm font-medium text-foreground hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         data-testid="mobile-filter-reset"
+        :disabled="props.resetDisabled"
         @click="resetFilters"
       >
         Đặt lại

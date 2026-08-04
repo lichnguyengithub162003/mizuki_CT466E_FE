@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ShoppingBag } from '@lucide/vue'
+import { MessageCircle, ShoppingBag } from '@lucide/vue'
+import { RouterLink } from 'vue-router'
 import type { CustomerBranch } from '@/types/customer-shell'
 import CustomerBranchSelector from './CustomerBranchSelector.vue'
 import CustomerLogo from './CustomerLogo.vue'
@@ -29,6 +30,9 @@ const emit = defineEmits<{
         class="ml-auto flex-1"
         @select="emit('selectBranch', $event)"
       />
+      <RouterLink :to="{ path: '/customer-shell', query: { section: 'support' } }" class="motion-interactive grid size-10 shrink-0 place-items-center rounded-xl text-primary-800 hover:bg-primary-50" aria-label="Trò chuyện hỗ trợ">
+        <MessageCircle class="size-5" aria-hidden="true" />
+      </RouterLink>
       <button
         type="button"
         class="motion-interactive relative grid size-11 shrink-0 place-items-center rounded-xl text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

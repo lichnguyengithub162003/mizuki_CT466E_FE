@@ -1,55 +1,127 @@
 <script setup lang="ts">
-import { ChevronRight, Droplets, PackageSearch } from '@lucide/vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ChevronRight } from '@lucide/vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import ProductBrandSlider from '@/components/products/ProductBrandSlider.vue'
-import ProductCategoryProductSlider from '@/components/products/ProductCategoryProductSlider.vue'
-import type {
-  ProductCategory,
-  ProductCategoryBrand,
-  ProductCategorySummary,
-  ProductListingBanner,
-} from '@/types/products'
 import { cn } from '@/utils/cn'
 
+interface BrandConveyorItem {
+  id: string
+  name: string
+  logoUrl?: string
+}
+
 const props = defineProps<{
-  banner: ProductListingBanner
-  brands: readonly ProductCategoryBrand[]
-  categories: readonly ProductCategory[]
-  summary: ProductCategorySummary
-  selectedCategoryIds: readonly string[]
+  brands: readonly BrandConveyorItem[]
+  selectedBrandId?: string
 }>()
 
-const enhancementsReady = ref(false)
-let enhancementFrame: number | undefined
-
-defineEmits<{
-  toggleCategory: [categoryId: string]
+const emit = defineEmits<{
+  selectBrand: [brandId: string]
 }>()
 
-const quickCategories = computed(() =>
-  props.summary.quickFilterIds
-    .map((categoryId) => props.categories.find((category) => category.id === categoryId))
-    .filter((category): category is ProductCategory => category !== undefined),
+const viewport = ref<HTMLElement | null>(null)
+const interactionPaused = ref(false)
+const dragging = ref(false)
+const dragged = ref(false)
+const reducedMotion = ref(false)
+const failedLogos = ref<ReadonlySet<string>>(new Set())
+const visibleBrands = computed(() => props.brands.filter(
+  (brand) => hasUsableLogo(brand) && brand.name.trim().toLocaleLowerCase() !== '9wishes',
+))
+let pointerStartX = 0
+let pointerStartScrollLeft = 0
+let pointerBrandId: string | undefined
+let suppressNextPointerClick = false
+let motionQuery: MediaQueryList | undefined
+
+const autoplayEnabled = computed(
+  () => visibleBrands.value.length > 1 && !props.selectedBrandId && !reducedMotion.value,
+)
+const marqueeRunning = computed(
+  () => autoplayEnabled.value && !interactionPaused.value && !dragging.value,
 )
 
-onMounted(() => {
-  if (typeof window.requestAnimationFrame === 'function') {
-    enhancementFrame = window.requestAnimationFrame(() => {
-      enhancementFrame = window.requestAnimationFrame(() => {
-        enhancementsReady.value = true
-      })
-    })
+function markLogoFailed(brandId: string): void {
+  failedLogos.value = new Set([...failedLogos.value, brandId])
+}
+
+function hasUsableLogo(brand: BrandConveyorItem): boolean {
+  return Boolean(brand.logoUrl) && !failedLogos.value.has(brand.id)
+}
+
+function updateReducedMotion(event: MediaQueryListEvent): void {
+  reducedMotion.value = event.matches
+}
+
+function startDrag(event: PointerEvent): void {
+  if (!viewport.value) return
+  dragging.value = true
+  dragged.value = false
+  pointerStartX = event.clientX
+  pointerStartScrollLeft = viewport.value.scrollLeft
+  pointerBrandId = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-brand-id]')
+    ?.dataset.brandId
+  viewport.value.setPointerCapture?.(event.pointerId)
+}
+
+function moveDrag(event: PointerEvent): void {
+  if (!dragging.value || !viewport.value) return
+  const distance = event.clientX - pointerStartX
+  if (Math.abs(distance) > 6) dragged.value = true
+  viewport.value.scrollLeft = pointerStartScrollLeft - distance
+}
+
+function finishDrag(event: PointerEvent): void {
+  if (!dragging.value) return
+  viewport.value?.releasePointerCapture?.(event.pointerId)
+  dragging.value = false
+  suppressNextPointerClick = true
+  if (!dragged.value && pointerBrandId) emit('selectBrand', pointerBrandId)
+  pointerBrandId = undefined
+}
+
+function cancelDrag(): void {
+  dragging.value = false
+  dragged.value = false
+  pointerBrandId = undefined
+  suppressNextPointerClick = false
+}
+
+function selectBrand(brandId: string, event: MouseEvent): void {
+  if (suppressNextPointerClick && event.detail !== 0) {
+    suppressNextPointerClick = false
+    dragged.value = false
     return
   }
+  suppressNextPointerClick = false
+  dragged.value = false
+  emit('selectBrand', brandId)
+}
 
-  enhancementsReady.value = true
+async function keepSelectedBrandVisible(): Promise<void> {
+  if (!props.selectedBrandId) return
+  await nextTick()
+  const selected = viewport.value?.querySelector<HTMLElement>(
+    '[data-brand-id="' + props.selectedBrandId + '"]',
+  )
+  selected?.scrollIntoView({ block: 'nearest', inline: 'center' })
+}
+
+watch(() => props.selectedBrandId, () => {
+  void keepSelectedBrandVisible()
+})
+
+onMounted(() => {
+  if (typeof window.matchMedia === 'function') {
+    motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    reducedMotion.value = motionQuery.matches
+    motionQuery.addEventListener('change', updateReducedMotion)
+  }
+  void keepSelectedBrandVisible()
 })
 
 onBeforeUnmount(() => {
-  if (enhancementFrame !== undefined && typeof window.cancelAnimationFrame === 'function') {
-    window.cancelAnimationFrame(enhancementFrame)
-  }
+  motionQuery?.removeEventListener('change', updateReducedMotion)
 })
 </script>
 
@@ -60,62 +132,102 @@ onBeforeUnmount(() => {
         Trang chủ
       </RouterLink>
       <ChevronRight class="size-3.5" aria-hidden="true" />
-      <span>Sản phẩm</span>
-      <ChevronRight class="size-3.5" aria-hidden="true" />
-      <span aria-current="page" class="font-medium text-primary-800">Chăm sóc da</span>
+      <span aria-current="page" class="font-medium text-primary-800">Sản phẩm</span>
     </nav>
 
-    <div class="mt-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,0.34fr)_minmax(0,0.66fr)]">
+    <h1 id="product-listing-heading" class="sr-only">Sản phẩm chăm sóc da</h1>
+
+    <section
+      class="mt-4 min-w-0 rounded-2xl border border-border bg-surface px-3 py-3 shadow-xs sm:px-4"
+      aria-labelledby="listing-brand-heading"
+      data-brand-conveyor
+      data-motion="continuous-marquee"
+      data-drag-enabled="true"
+      :data-autoplay-enabled="autoplayEnabled"
+      :data-marquee-running="marqueeRunning"
+      :data-paused="interactionPaused || dragging || Boolean(props.selectedBrandId)"
+      :data-reduced-motion="reducedMotion"
+      @mouseenter="interactionPaused = true"
+      @mouseleave="interactionPaused = false"
+      @focusin="interactionPaused = true"
+      @focusout="interactionPaused = false"
+    >
+      <h2 id="listing-brand-heading" class="text-body-md font-semibold text-primary-950">
+        Thương hiệu nổi bật
+      </h2>
+
       <div
-        class="flex min-w-0 flex-col rounded-2xl border border-border bg-surface px-5 py-5 shadow-xs sm:px-6 sm:py-6"
-        data-category-summary
+        ref="viewport"
+        :class="cn(
+          'mt-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-y select-none',
+          dragging ? 'cursor-grabbing' : 'cursor-grab',
+        )"
+        data-brand-marquee-viewport
+        role="group"
+        aria-label="Danh sách thương hiệu nổi bật"
+        @pointerdown="startDrag"
+        @pointermove="moveDrag"
+        @pointerup="finishDrag"
+        @pointercancel="cancelDrag"
       >
-        <div class="flex items-center gap-2 text-primary-700">
-          <Droplets class="size-4" aria-hidden="true" />
-          <p class="text-caption font-semibold uppercase tracking-[0.14em]">
-            Danh mục sản phẩm
-          </p>
-        </div>
-        <h1 id="product-listing-heading" class="mt-3 text-heading-2" data-visible-label="Chăm sóc da">
-          <span class="sr-only">Sản phẩm </span><span class="capitalize">{{ props.summary.name }}</span>
-        </h1>
-        <p class="mt-2 line-clamp-3 text-body-sm text-text-secondary">
-          {{ props.summary.description }}
-        </p>
-        <p
-          class="mt-4 inline-flex items-center gap-2 text-body-sm font-medium text-primary-800"
-          data-category-result-count
+        <div
+          :key="props.selectedBrandId ?? 'marquee'"
+          class="brand-marquee-track flex w-max gap-2.5"
+          :style="{ animationPlayState: marqueeRunning ? 'running' : 'paused' }"
+          data-brand-marquee-track
         >
-          <PackageSearch class="size-4" aria-hidden="true" />
-          {{ props.summary.resultCount }} sản phẩm minh họa
-        </p>
-
-        <ProductCategoryProductSlider
-          v-if="enhancementsReady"
-          :products="props.summary.previewProducts"
-        />
-
-        <div class="mt-auto flex max-w-full gap-2 overflow-x-auto pb-1 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button
-            v-for="category in quickCategories"
-            :key="category.id"
-            type="button"
-            data-quick-category-filter
-            :aria-pressed="props.selectedCategoryIds.includes(category.id)"
-            :class="cn(
-              'motion-interactive min-h-9 shrink-0 rounded-pill border px-3.5 text-body-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-              props.selectedCategoryIds.includes(category.id)
-                ? 'border-primary-700 bg-primary-800 text-primary-foreground'
-                : 'border-border bg-background text-text-secondary hover:border-primary-200 hover:text-primary-900',
-            )"
-            @click="$emit('toggleCategory', category.id)"
-          >
-            {{ category.label }}
-          </button>
+          <template v-for="copy in 2" :key="copy">
+            <button
+              v-for="brand in visibleBrands"
+              :key="copy + '-' + brand.id"
+              type="button"
+              :tabindex="copy === 1 ? 0 : -1"
+              :aria-hidden="copy === 2 ? 'true' : undefined"
+              :aria-label="copy === 1 ? 'Lọc theo thương hiệu ' + brand.name : undefined"
+              :aria-pressed="copy === 1 ? props.selectedBrandId === brand.id : undefined"
+              :data-brand-id="brand.id"
+              :data-brand-copy="copy"
+              :class="cn(
+                'motion-interactive flex h-20 w-44 shrink-0 items-center justify-center rounded-xl border bg-[#f7faf8] px-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-48',
+                props.selectedBrandId === brand.id
+                  ? 'border-primary-700 bg-primary-50 ring-2 ring-primary-700/15'
+                  : 'border-primary-100 hover:border-primary-300 hover:bg-primary-50/70',
+              )"
+              data-brand-item
+              @click="selectBrand(brand.id, $event)"
+            >
+              <img
+                :src="brand.logoUrl"
+                :alt="brand.name"
+                class="max-h-12 max-w-full object-contain"
+                loading="lazy"
+                draggable="false"
+                data-brand-logo
+                @error="markLogoFailed(brand.id)"
+              />
+            </button>
+          </template>
         </div>
       </div>
-
-      <ProductBrandSlider v-if="enhancementsReady" :brands="props.brands" />
-    </div>
+    </section>
   </section>
 </template>
+
+<style scoped>
+@keyframes brand-marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-50% - 0.3125rem)); }
+}
+
+.brand-marquee-track {
+  animation: brand-marquee-scroll 38s linear infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-marquee-track {
+    animation: none;
+    transform: none;
+  }
+}
+</style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { LogIn, LogOut, MapPin, Package, Settings, UserPlus, UserRound } from '@lucide/vue'
+import { LogIn, LogOut, MapPin, Package, Settings, UserPlus, UserRound, WalletCards } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
+import { ROUTE_PATHS } from '@/constants/routes'
 import { useAuthStore } from '@/stores/auth'
 import { pinia } from '@/stores/pinia'
 import CustomerAccountAvatar from './CustomerAccountAvatar.vue'
@@ -40,6 +41,10 @@ const pendingItems = [
       </div>
 
       <div class="grid gap-1" aria-label="Tiện ích tài khoản">
+        <a :href="ROUTE_PATHS.wallet" class="motion-interactive flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-body-sm text-foreground no-underline hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" @click="emit('close')">
+          <WalletCards class="size-4 shrink-0" aria-hidden="true" />
+          Ví Mizuki
+        </a>
         <button
           v-for="item in pendingItems"
           :key="item.label"

@@ -25,11 +25,10 @@ import ProductBranchAvailabilityCarousel from '@/components/products/ProductBran
 import ProductDetailGallery from '@/components/products/ProductDetailGallery.vue'
 import ProductSuggestions from '@/components/products/ProductSuggestions.vue'
 import { ROUTE_NAMES } from '@/constants/routes'
-import {
-  getProductDetailBySlug,
-  getRelatedProducts,
-} from '@/data/products/productDetailDemoData'
 import CustomerLayout from '@/layouts/CustomerLayout.vue'
+import { useProductDetailQuery, useProductListingQuery } from '@/queries/productListing'
+import { pinia } from '@/stores/pinia'
+import { useBranchPreferenceStore } from '@/stores/branchPreference'
 import type {
   ProductContentState,
   ProductDetailStockState,
@@ -59,6 +58,8 @@ const sectionLinks = [
 
 const route = useRoute()
 const router = useRouter()
+const branchStore = useBranchPreferenceStore(pinia)
+branchStore.restore()
 const retryState = ref<ProductDetailDemoState | null>(null)
 const quantity = ref(1)
 const selectedVariants = ref<Record<string, string>>({})
@@ -72,10 +73,9 @@ const questionFeedback = ref('')
 const submittedQuestions = ref<SubmittedQuestion[]>([])
 let submittedQuestionCount = 0
 
-const product = computed(() => {
-  const slug = typeof route.params.slug === 'string' ? route.params.slug : ''
-  return getProductDetailBySlug(slug)
-})
+const slug = computed(() => typeof route.params.slug === 'string' ? route.params.slug : '')
+const detailQuery = useProductDetailQuery(slug)
+const product = computed(() => detailQuery.data.value)
 
 const requestedState = computed<ProductDetailDemoState>(() => {
   if (retryState.value) {
@@ -99,15 +99,22 @@ const requestedState = computed<ProductDetailDemoState>(() => {
 })
 
 const contentState = computed<ProductContentState>(() => {
-  if (!product.value || requestedState.value === 'empty') return 'empty'
   if (requestedState.value === 'loading') return 'loading'
   if (requestedState.value === 'error') return 'error'
+  if (detailQuery.isPending.value) return 'loading'
+  if (detailQuery.isError.value) return 'error'
+  if (!product.value || requestedState.value === 'empty') return 'empty'
   return 'success'
 })
 
-const relatedProducts = computed(() =>
-  product.value ? getRelatedProducts(product.value) : [],
-)
+const relatedRequest = computed(() => ({
+  ...(branchStore.selectedBranchId ? { branch_id: branchStore.selectedBranchId } : {}),
+  sort: 'rating' as const,
+  page: 1,
+  per_page: 8,
+}))
+const relatedQuery = useProductListingQuery(relatedRequest, computed(() => Boolean(product.value)))
+const relatedProducts = computed(() => relatedQuery.data.value?.products.filter((item) => item.slug !== slug.value) ?? [])
 
 const selectedUnavailable = computed(() => {
   if (requestedState.value === 'unavailable-variant') {
@@ -130,6 +137,8 @@ const purchaseStock = computed<{ state: ProductDetailStockState; label: string }
   if (selectedUnavailable.value) {
     return { state: 'out-of-stock', label: 'Phân loại này tạm hết hàng' }
   }
+  const selectedBranch = product.value?.branches.find((branch) => branch.id === String(branchStore.selectedBranchId))
+  if (selectedBranch) return { state: selectedBranch.stockState, label: selectedBranch.stockLabel }
   return {
     state: product.value?.stockState ?? 'out-of-stock',
     label: product.value?.stockLabel ?? 'Tạm hết hàng',
@@ -180,8 +189,8 @@ function submitPurchase(action: 'cart' | 'buy'): void {
   if (purchaseDisabled.value) return
 
   purchaseFeedback.value = action === 'cart'
-    ? `Đã chuẩn bị ${quantity.value} sản phẩm trong giỏ hàng demo.`
-    : 'Đã chuẩn bị bước mua ngay trong bản demo.'
+    ? `Đã chọn ${quantity.value} sản phẩm để thêm vào giỏ hàng.`
+    : 'Đã chuẩn bị sản phẩm cho bước mua ngay.'
 
   if (action === 'cart') {
     void router.push({ name: ROUTE_NAMES.cart })
@@ -236,6 +245,7 @@ function scrollToSection(sectionId: typeof sectionLinks[number]['id']): void {
 
 function retry(): void {
   retryState.value = 'success'
+  void detailQuery.refetch()
   void router.replace({
     query: {
       ...route.query,
@@ -284,7 +294,7 @@ function retry(): void {
           <ShoppingBag class="mx-auto size-12 text-primary-500" aria-hidden="true" />
           <h1 class="mt-5 text-heading-2 text-primary-950">Không tìm thấy sản phẩm</h1>
           <p class="mt-2 text-body-md text-text-secondary">
-            Sản phẩm có thể đã thay đổi hoặc không còn trong danh mục demo.
+            Sản phẩm có thể đã thay đổi hoặc không còn trong danh mục hiện tại.
           </p>
           <RouterLink
             :to="{ name: ROUTE_NAMES.products }"
@@ -304,7 +314,7 @@ function retry(): void {
           <CircleHelp class="mx-auto size-12 text-primary-600" aria-hidden="true" />
           <h1 class="mt-5 text-heading-2 text-primary-950">Chưa thể hiển thị sản phẩm</h1>
           <p class="mt-2 text-body-md text-text-secondary">
-            Nội dung demo đang gián đoạn. Bạn có thể thử hiển thị lại ngay.
+            Dữ liệu sản phẩm đang gián đoạn. Bạn có thể thử hiển thị lại ngay.
           </p>
           <BaseButton class="mt-6" @click="retry">Thử lại</BaseButton>
         </div>
@@ -340,7 +350,7 @@ function retry(): void {
               <a href="#reviews" class="underline decoration-primary-300 underline-offset-4">
                 {{ product.reviewCount }} đánh giá
               </a>
-              <span>Đã bán {{ product.soldCount }}</span>
+              <span v-if="product.soldCount > 0">Đã bán {{ product.soldCount }}</span>
             </div>
 
             <div class="mt-5 flex flex-wrap items-baseline gap-3 rounded-2xl bg-[#f4f8f6] p-4">

@@ -1,40 +1,70 @@
 <script setup lang="ts">
-import { ChevronDown, Droplets, Palette, Scissors, Sparkles } from '@lucide/vue'
-import { ref } from 'vue'
-import { RouterLink } from 'vue-router'
-import BasePopover from '@/components/common/BasePopover.vue'
+import { ChevronDown, Sparkles } from "@lucide/vue";
+import { computed, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
+import BasePopover from "@/components/common/BasePopover.vue";
+import { PRODUCT_LISTING_FALLBACK_IMAGE } from "@/api/productListingAdapter";
+import {
+  useProductDiscoveryQuery,
+  useRepresentativeProductsQuery,
+} from "@/queries/productListing";
+import { pinia } from "@/stores/pinia";
+import { useBranchPreferenceStore } from "@/stores/branchPreference";
 
-const open = ref(false)
+const open = ref(false);
+const activeParentId = ref<number | null>(null);
+const failedImages = ref<ReadonlySet<string>>(new Set());
+const discoveryQuery = useProductDiscoveryQuery(computed(() => open.value));
+const branchStore = useBranchPreferenceStore(pinia);
+const rootCategories = computed(
+  () => discoveryQuery.data.value?.categories ?? [],
+);
 
-const categoryGroups = [
-  {
-    label: 'Chăm sóc da',
-    icon: Droplets,
-    sections: [
-      { label: 'Làm sạch', items: ['Sữa rửa mặt', 'Tẩy trang'] },
-      { label: 'Dưỡng da', items: ['Serum', 'Kem dưỡng'] },
-    ],
+watch(
+  rootCategories,
+  (categories) => {
+    if (!categories.some((category) => category.id === activeParentId.value)) {
+      activeParentId.value = categories[0]?.id ?? null;
+    }
   },
-  {
-    label: 'Trang điểm',
-    icon: Palette,
-    sections: [
-      { label: 'Trang điểm mặt', items: [] },
-      { label: 'Trang điểm môi', items: [] },
-    ],
-  },
-  {
-    label: 'Chăm sóc tóc',
-    icon: Scissors,
-    sections: [
-      { label: 'Dầu gội', items: [] },
-      { label: 'Dầu xả', items: [] },
-    ],
-  },
-] as const
+  { immediate: true },
+);
+
+const activeParent = computed(
+  () =>
+    rootCategories.value.find(
+      (category) => category.id === activeParentId.value,
+    ) ?? rootCategories.value[0],
+);
+const visibleChildren = computed(
+  () => activeParent.value?.children.slice(0, 6) ?? [],
+);
+const representativeQuery = useRepresentativeProductsQuery(
+  computed(() => ({
+    categoryIds: visibleChildren.value.map((category) => category.id),
+    brandIds: [],
+    ...(branchStore.selectedBranchId
+      ? { branchId: branchStore.selectedBranchId }
+      : {}),
+  })),
+  computed(() => open.value && visibleChildren.value.length > 0),
+);
 
 function closeMenu(): void {
-  open.value = false
+  open.value = false;
+}
+
+function representativeImage(categoryId: number): string {
+  if (failedImages.value.has(String(categoryId)))
+    return PRODUCT_LISTING_FALLBACK_IMAGE;
+  return (
+    representativeQuery.data.value?.categories.get(categoryId)?.imageUrl ??
+    PRODUCT_LISTING_FALLBACK_IMAGE
+  );
+}
+
+function markImageFailed(categoryId: number): void {
+  failedImages.value = new Set([...failedImages.value, String(categoryId)]);
 }
 </script>
 
@@ -43,7 +73,7 @@ function closeMenu(): void {
     v-model="open"
     align="start"
     :side-offset="10"
-    class="w-[min(46rem,calc(100vw-2rem))] rounded-2xl border-white/80 bg-background/98 p-5 shadow-lg"
+    class="max-h-[calc(100svh-9rem)] w-[min(52rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border-white/80 bg-background/98 p-0 shadow-lg"
   >
     <template #trigger>
       <button
@@ -62,55 +92,108 @@ function closeMenu(): void {
       </button>
     </template>
 
-    <section aria-labelledby="customer-category-menu-title">
-      <div class="mb-4 flex items-center justify-between gap-4 border-b border-border/70 pb-3">
-        <div>
-          <p class="text-caption uppercase tracking-[0.12em] text-primary-700">Khám phá</p>
-          <h2 id="customer-category-menu-title" class="mt-1 text-heading-4">Danh mục sản phẩm</h2>
-        </div>
-        <span class="rounded-pill bg-primary-50 px-3 py-1 text-caption text-primary-800">
-          Nội dung demo
-        </span>
-      </div>
-
-      <div class="grid gap-5 sm:grid-cols-3">
-        <section
-          v-for="group in categoryGroups"
-          :key="group.label"
-          :aria-labelledby="`category-${group.label}`"
+    <section
+      class="flex max-h-[calc(100svh-12rem)] min-w-0 flex-col overflow-hidden"
+      aria-label="Danh mục sản phẩm"
+      data-real-category-menu
+    >
+      <p
+        v-if="discoveryQuery.isPending.value"
+        class="px-5 py-6 text-center text-body-sm text-text-secondary"
+      >
+        Đang tải danh mục…
+      </p>
+      <div
+        v-else-if="discoveryQuery.isError.value"
+        class="grid justify-items-center gap-2 px-5 py-6"
+      >
+        <p class="text-body-sm text-text-secondary">Chưa thể tải danh mục.</p>
+        <button
+          type="button"
+          class="text-body-sm font-semibold text-primary-800"
+          @click="discoveryQuery.refetch()"
         >
-          <h3
-            :id="`category-${group.label}`"
-            class="flex items-center gap-2 text-body-md font-semibold text-foreground"
+          Thử lại
+        </button>
+      </div>
+      <div
+        v-else
+        class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-4"
+        data-category-menu-scroll-region
+      >
+        <div
+          class="grid min-h-64 min-w-0 grid-cols-[13rem_minmax(0,1fr)] gap-4"
+        >
+          <nav
+            class="min-w-0 border-r border-border pr-3"
+            aria-label="Danh mục cha"
           >
-            <span class="grid size-8 place-items-center rounded-xl bg-admin-sage-soft text-primary-700">
-              <component :is="group.icon" class="size-4" aria-hidden="true" />
-            </span>
-            {{ group.label }}
-          </h3>
-          <ul class="mt-3 grid gap-2">
-            <li v-for="section in group.sections" :key="section.label">
+            <RouterLink
+              v-for="category in rootCategories"
+              :key="category.id"
+              :to="{
+                path: '/products',
+                query: { category_id: String(category.id), page: '1' },
+              }"
+              class="motion-interactive flex min-h-9 items-center rounded-lg px-3 text-body-sm text-text-secondary hover:bg-primary-50 hover:text-primary-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              :class="
+                activeParent?.id === category.id &&
+                'bg-primary-50 font-semibold text-primary-900'
+              "
+              :data-header-category-id="category.id"
+              @mouseenter="activeParentId = category.id"
+              @focus="activeParentId = category.id"
+              @click="closeMenu"
+            >
+              {{ category.name }}
+            </RouterLink>
+          </nav>
+
+          <div class="min-w-0 pr-1">
+            <h3 class="text-body-md font-semibold text-primary-950">
+              {{ activeParent?.name }}
+            </h3>
+            <div
+              v-if="visibleChildren.length > 0"
+              class="mt-3 grid gap-2 sm:grid-cols-2"
+            >
               <RouterLink
-                :to="`/customer-shell?section=categories`"
-                class="inline-flex min-h-8 items-center rounded-lg text-body-sm font-medium text-primary-900 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                v-for="category in visibleChildren"
+                :key="category.id"
+                :to="{
+                  path: '/products',
+                  query: { category_id: String(category.id), page: '1' },
+                }"
+                class="motion-interactive flex min-h-20 items-center gap-3 rounded-xl border border-border bg-surface-subtle/55 p-2.5 text-body-sm font-medium text-primary-900 hover:border-primary-200 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                :data-header-child-category-id="category.id"
                 @click="closeMenu"
               >
-                {{ section.label }}
+                <img
+                  :src="representativeImage(category.id)"
+                  :alt="category.name"
+                  class="size-16 shrink-0 rounded-xl border border-white bg-white object-contain p-1 shadow-xs"
+                  width="64"
+                  height="64"
+                  loading="lazy"
+                  data-category-representative-image
+                  @error="markImageFailed(category.id)"
+                />
+                <span class="line-clamp-2">{{ category.name }}</span>
               </RouterLink>
-              <ul v-if="section.items.length" class="mt-1 grid gap-1 border-l border-primary-100 pl-3">
-                <li v-for="item in section.items" :key="item">
-                  <RouterLink
-                    to="/customer-shell?section=categories"
-                    class="inline-flex min-h-7 items-center rounded-md text-caption text-muted-foreground hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                    @click="closeMenu"
-                  >
-                    {{ item }}
-                  </RouterLink>
-                </li>
-              </ul>
-            </li>
-          </ul>
-        </section>
+            </div>
+            <RouterLink
+              v-else-if="activeParent"
+              :to="{
+                path: '/products',
+                query: { category_id: String(activeParent.id), page: '1' },
+              }"
+              class="mt-3 inline-flex min-h-10 items-center rounded-xl bg-primary-50 px-4 text-body-sm font-semibold text-primary-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              @click="closeMenu"
+            >
+              Xem sản phẩm
+            </RouterLink>
+          </div>
+        </div>
       </div>
     </section>
   </BasePopover>

@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, Heart, PackageOpen, Star } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, Heart, Star } from '@lucide/vue'
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { PRODUCT_LISTING_FALLBACK_IMAGE } from '@/api/productListingAdapter'
 import { ROUTE_NAMES } from '@/constants/routes'
-import type { ProductListingProduct } from '@/types/products'
+import type { ProductContentState, ProductListingProduct } from '@/types/products'
 import { cn } from '@/utils/cn'
 
 const props = defineProps<{
   products: readonly ProductListingProduct[]
+  state?: ProductContentState
 }>()
+
+defineEmits<{ retry: [] }>()
 
 const carousel = ref<HTMLElement>()
 const activeIndex = ref(0)
+const failedImages = ref<ReadonlySet<string>>(new Set())
+const favoriteIds = ref<ReadonlySet<string>>(new Set())
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN', {
   style: 'currency',
@@ -29,7 +35,24 @@ const toneClasses: Record<ProductListingProduct['tone'], string> = {
 function stockLabel(product: ProductListingProduct): string {
   if (product.stockState === 'sold_out') return 'Đã bán hết'
   if (product.stockState === 'low') return 'Sắp hết hàng'
-  return `Đã bán ${product.soldCount ?? 0}`
+  return 'Còn hàng'
+}
+
+function productImage(product: ProductListingProduct): string {
+  return failedImages.value.has(product.id)
+    ? PRODUCT_LISTING_FALLBACK_IMAGE
+    : product.imageUrl ?? PRODUCT_LISTING_FALLBACK_IMAGE
+}
+
+function handleImageError(productId: string): void {
+  failedImages.value = new Set([...failedImages.value, productId])
+}
+
+function toggleFavorite(productId: string): void {
+  const next = new Set(favoriteIds.value)
+  if (next.has(productId)) next.delete(productId)
+  else next.add(productId)
+  favoriteIds.value = next
 }
 
 function prefersReducedMotion(): boolean {
@@ -98,7 +121,17 @@ function handleKeyboard(event: KeyboardEvent): void {
       </RouterLink>
     </div>
 
-    <div class="relative mt-4">
+    <div v-if="props.state === 'loading'" class="mt-4 min-h-32 rounded-2xl bg-white/55 p-5 text-body-sm text-text-secondary">
+      Đang tải sản phẩm gợi ý…
+    </div>
+    <div v-else-if="props.state === 'error'" class="mt-4 min-h-32 rounded-2xl bg-white/55 p-5 text-body-sm text-text-secondary">
+      <p>Chưa thể tải sản phẩm gợi ý.</p>
+      <button type="button" class="mt-3 font-semibold text-primary-800" @click="$emit('retry')">Thử lại</button>
+    </div>
+    <div v-else-if="props.state === 'empty'" class="mt-4 min-h-32 rounded-2xl bg-white/55 p-5 text-body-sm text-text-secondary">
+      Chưa có sản phẩm gợi ý.
+    </div>
+    <div v-else class="relative mt-4">
       <div
         ref="carousel"
         class="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -121,9 +154,14 @@ function handleKeyboard(event: KeyboardEvent): void {
             :class="cn('relative aspect-[4/3] overflow-hidden p-3', toneClasses[product.tone])"
             data-compact-product-visual
           >
-            <div class="grid size-full place-items-center rounded-xl border border-white/70 bg-white/45 text-primary-700">
-              <PackageOpen class="size-8 opacity-75" aria-hidden="true" />
-            </div>
+            <img
+              :src="productImage(product)"
+              :alt="product.name"
+              class="size-full rounded-xl border border-white/70 bg-white/45 object-contain"
+              loading="lazy"
+              data-suggested-product-image
+              @error="handleImageError(product.id)"
+            />
             <span
               v-if="product.discountPercent"
               class="absolute left-2.5 top-2.5 rounded-pill bg-[#d9463e] px-2 py-0.5 text-[0.625rem] font-semibold text-white"
@@ -132,10 +170,15 @@ function handleKeyboard(event: KeyboardEvent): void {
             </span>
             <button
               type="button"
-              class="motion-interactive absolute right-2.5 top-2.5 grid size-9 place-items-center rounded-full bg-white/90 text-primary-800 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              :class="cn(
+                'motion-interactive absolute right-2.5 top-2.5 grid size-9 place-items-center rounded-full bg-white/90 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                favoriteIds.has(product.id) ? 'text-red-600' : 'text-primary-800',
+              )"
               :aria-label="`Yêu thích ${product.name}`"
+              :aria-pressed="favoriteIds.has(product.id)"
+              @click.stop="toggleFavorite(product.id)"
             >
-              <Heart class="size-4" aria-hidden="true" />
+              <Heart :class="cn('size-4', favoriteIds.has(product.id) && 'fill-current')" aria-hidden="true" />
             </button>
           </div>
 
@@ -143,12 +186,13 @@ function handleKeyboard(event: KeyboardEvent): void {
             <p class="text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-primary-700">
               {{ product.brand }}
             </p>
-            <h3
+            <RouterLink
               :id="`compact-product-${product.id}`"
+              :to="{ name: ROUTE_NAMES.productDetail, params: { slug: product.slug } }"
               class="mt-1 line-clamp-2 min-h-10 text-body-sm font-medium text-primary-950"
             >
               {{ product.name }}
-            </h3>
+            </RouterLink>
             <div class="mt-2 flex flex-wrap items-baseline gap-x-1.5">
               <strong class="text-body-md font-semibold text-[#cf3f36]">
                 {{ currencyFormatter.format(product.price) }}
@@ -164,6 +208,14 @@ function handleKeyboard(event: KeyboardEvent): void {
               </span>
               <span>{{ stockLabel(product) }}</span>
             </div>
+            <RouterLink
+              :to="{ name: ROUTE_NAMES.productDetail, params: { slug: product.slug } }"
+              class="motion-interactive mt-auto inline-flex min-h-9 w-full items-center justify-center rounded-xl bg-primary-800 px-3 py-2 text-body-sm font-semibold text-primary-foreground hover:bg-primary-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              :aria-label="`Xem sản phẩm ${product.name}`"
+              data-suggestion-product-action
+            >
+              Xem sản phẩm
+            </RouterLink>
           </div>
         </article>
       </div>

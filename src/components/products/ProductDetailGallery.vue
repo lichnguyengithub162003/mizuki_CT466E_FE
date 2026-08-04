@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Image, Search } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
+import { PRODUCT_LISTING_FALLBACK_IMAGE } from '@/api/productListingAdapter'
 import type { ProductDetailImage } from '@/types/products'
 import { cn } from '@/utils/cn'
 
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>()
 
 const selectedImageId = ref(props.images[0]?.id ?? '')
+const failedImages = ref<ReadonlySet<string>>(new Set())
 const selectedImage = computed(
   () => props.images.find((image) => image.id === selectedImageId.value) ?? props.images[0],
 )
@@ -19,6 +21,16 @@ const toneClasses: Record<ProductDetailImage['tone'], string> = {
   sand: 'from-[#f2e8d8] to-[#fffdf8]',
   rose: 'from-[#f0e0df] to-[#fffafa]',
   sky: 'from-[#dfeaf0] to-[#fbfdff]',
+}
+
+function imageSource(image: ProductDetailImage): string | undefined {
+  if (!image.imageUrl) return undefined
+  return failedImages.value.has(image.id) ? PRODUCT_LISTING_FALLBACK_IMAGE : image.imageUrl
+}
+
+function markImageFailed(imageId: string): void {
+  if (failedImages.value.has(imageId)) return
+  failedImages.value = new Set([...failedImages.value, imageId])
 }
 
 watch(
@@ -43,7 +55,17 @@ watch(
       role="img"
       :data-main-image-id="selectedImage.id"
     >
-      <div class="grid size-[56%] place-items-center rounded-[2.5rem] border border-white/80 bg-white/55 text-primary-700 shadow-sm">
+      <img
+        v-if="imageSource(selectedImage)"
+        :src="imageSource(selectedImage)"
+        :alt="selectedImage.alt"
+        class="size-full object-contain p-6"
+        width="720"
+        height="720"
+        data-detail-main-image
+        @error="markImageFailed(selectedImage.id)"
+      >
+      <div v-else class="grid size-[56%] place-items-center rounded-[2.5rem] border border-white/80 bg-white/55 text-primary-700 shadow-sm">
         <Image class="size-20 opacity-70 sm:size-28" aria-hidden="true" />
       </div>
       <span class="absolute bottom-5 left-5 rounded-full bg-white/88 px-3 py-1.5 text-body-sm font-medium text-primary-900 shadow-xs">
@@ -73,7 +95,8 @@ watch(
         :data-thumbnail-id="image.id"
         @click="selectedImageId = image.id"
       >
-        <Image class="size-5 sm:size-7" aria-hidden="true" />
+        <img v-if="imageSource(image)" :src="imageSource(image)" :alt="image.alt" class="size-full rounded-xl object-contain p-1" width="96" height="96" @error="markImageFailed(image.id)">
+        <Image v-else class="size-5 sm:size-7" aria-hidden="true" />
       </button>
     </div>
   </section>

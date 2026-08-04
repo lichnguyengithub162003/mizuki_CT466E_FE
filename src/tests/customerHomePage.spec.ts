@@ -293,7 +293,9 @@ describe('customer home page', () => {
   it('keeps the floating voucher visible on the home page', async () => {
     const { wrapper } = await mountHomeApp()
 
-    expect(wrapper.get('button[aria-label="Nhận voucher Mizuki"]').text()).toContain('Nhận voucher')
+    const voucherLink = wrapper.get('a[aria-label="Nhận voucher Mizuki"]')
+    expect(voucherLink.text()).toContain('Nhận voucher')
+    expect(voucherLink.attributes('href')).toBe('/vouchers')
   })
 
   it('supports loading, empty, and recoverable error product states', async () => {
@@ -376,7 +378,7 @@ describe('customer home page', () => {
     await wrapper.get('button[aria-label="Banner tiếp theo"]').trigger('click')
     const favoriteButton = wrapper.find('button[aria-label^="Yêu thích Gel làm sạch"]')
     await favoriteButton.trigger('click')
-    await wrapper.get('button[aria-label="Nhận voucher Mizuki"]').trigger('click')
+    expect(wrapper.get('a[aria-label="Nhận voucher Mizuki"]').attributes('href')).toBe('/vouchers')
 
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(xhrSpy).not.toHaveBeenCalled()
