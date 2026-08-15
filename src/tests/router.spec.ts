@@ -109,7 +109,7 @@ describe('foundation router', () => {
 
     await router.push('/cart')
     await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('Giỏ hàng của bạn')
+    expect(wrapper.get('nav[aria-label="Đường dẫn trang"]').text()).toContain('Giỏ hàng')
 
     await router.push('/checkout')
     await flushPromises()

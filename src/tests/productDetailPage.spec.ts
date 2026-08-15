@@ -3,12 +3,11 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, type Router } from 'vue-router'
 import App from '@/App.vue'
 import { createAppRouter } from '@/router'
-import type {
-  ProductDetailProductDto,
-  ProductDetailResponseDto,
-  ProductListingResponseDto,
-} from '@/api/productListingApi'
-import { adaptProductDetail } from '@/api/productListingAdapter'
+import type { ProductListingResponseDto } from '@/api/productListingApi'
+import {
+  adaptProductDetail,
+  type ProductDetailSourceResponseDto,
+} from '@/api/productListingAdapter'
 import { pinia } from '@/stores/pinia'
 import { useBranchPreferenceStore } from '@/stores/branchPreference'
 import { useAuthStore } from '@/stores/auth'
@@ -16,33 +15,43 @@ import { useAuthStore } from '@/stores/auth'
 const mocks = vi.hoisted(() => ({
   getProductDetail: vi.fn(),
   getProductListing: vi.fn(),
+  getProductReviews: vi.fn(),
   followBrand: vi.fn(),
   unfollowBrand: vi.fn(),
+}))
+const cartMocks = vi.hoisted(() => ({
+  getCustomerCart: vi.fn(),
+  addCartItem: vi.fn(),
+  updateCartItem: vi.fn(),
+  removeCartItem: vi.fn(),
+  selectCartBranch: vi.fn(),
 }))
 vi.mock('@/api/productListingApi', () => ({
   getProductDetail: mocks.getProductDetail,
   getProductListing: mocks.getProductListing,
+  getProductReviews: mocks.getProductReviews,
   followBrand: mocks.followBrand,
   unfollowBrand: mocks.unfollowBrand,
 }))
+vi.mock('@/api/cartApi', () => cartMocks)
 
 const slug = 'thuc-pham-bao-ve-suc-khoe-dhc-vitamin-b-mix-242388'
-const detail: ProductDetailResponseDto = {
+const detail: ProductDetailSourceResponseDto = {
   success: true, message: 'OK', data: {
     product: {
       id: 2406, name: 'Thực Phẩm Bảo Vệ Sức Khỏe DHC Vitamin B Mix', slug,
       short_description: 'Gói 20 ngày uống', description: '<p>Mô tả sản phẩm thật.</p>', ingredients: '<p>Vitamin B.</p>', usage_instructions: '<p>Uống theo hướng dẫn.</p>',
-      specifications: { spec_dung_tich: '40 viên' }, origin_country: 'Nhật Bản',
-      images: [{ id: 1, image_url: 'http://localhost:8000/storage/catalog/products/242388/one.jpg', alt_text: 'DHC Vitamin B', sort_order: 0 }],
-      gallery: [{ id: 1, image_url: 'http://localhost:8000/storage/catalog/products/242388/one.jpg', alt_text: 'DHC Vitamin B', sort_order: 0 }],
-      variants: [{ id: 2421, name: 'Gói 20 ngày', sku: 'HS-242388', attributes: {}, price: 90000, sale_price: null, effective_price: 90000, total_available_quantity: 20, available: true }],
-      prices: { minimum: 90000, maximum: 90000 }, rating: 3.2, review_count: 4,
-      branch_availability: [{ variant_id: 2421, branch_id: 6, branch_name: 'Mizuki Vĩnh Long', available_quantity: 3 }],
-      related_products: [],
     },
+    specifications: { spec_dung_tich: '40 viên' }, origin_country: 'Nhật Bản',
     brand: { id: 91, name: 'DHC', slug: 'dhc', logo_url: null, active_product_count: 22, average_rating: 4.9, review_count: 225, follower_count: 802 },
+    images: [{ id: 1, image_url: 'http://localhost:8000/storage/catalog/products/242388/one.jpg', alt_text: 'DHC Vitamin B', sort_order: 0 }],
+    gallery: [{ id: 1, image_url: 'http://localhost:8000/storage/catalog/products/242388/one.jpg', alt_text: 'DHC Vitamin B', sort_order: 0 }],
+    variants: [{ id: 2421, name: 'Gói 20 ngày', sku: 'HS-242388', attributes: {}, price: 90000, sale_price: null, effective_price: 90000, total_available_quantity: 20, available: true }],
+    prices: { minimum: 90000, maximum: 90000 }, rating: 3.2, review_count: 4,
+    branch_availability: [{ variant_id: 2421, branch_id: 6, branch_name: 'Mizuki Vĩnh Long', available_quantity: 3 }],
+    related_products: [],
     reviews: [],
-    qa: [],
+    questions_and_answers: [],
   },
 }
 const listing: ProductListingResponseDto = {
@@ -71,9 +80,9 @@ const listing: ProductListingResponseDto = {
 const wrappers: VueWrapper[] = []
 
 function detailResponse(
-  productOverrides: Partial<ProductDetailProductDto> = {},
-  rootOverrides: Partial<Omit<ProductDetailResponseDto['data'], 'product'>> = {},
-): ProductDetailResponseDto {
+  productOverrides: Partial<ProductDetailSourceResponseDto['data']['product']> = {},
+  rootOverrides: Partial<Omit<ProductDetailSourceResponseDto['data'], 'product'>> = {},
+): ProductDetailSourceResponseDto {
   return {
     ...structuredClone(detail),
     data: {
@@ -92,10 +101,10 @@ async function mountDetail(path = `/products/${slug}`): Promise<{ wrapper: VueWr
   return { wrapper, router }
 }
 
-function authenticateCustomer(): void {
+function authenticateCustomer(id = 7): void {
   useAuthStore(pinia).$patch({
     user: {
-      id: 7,
+      id,
       name: 'Khách hàng thử nghiệm',
       email: 'customer@example.com',
       phone: null,
@@ -113,12 +122,16 @@ function authenticateCustomer(): void {
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn()
   useAuthStore(pinia).resetForTesting()
+  window.localStorage.setItem('mizuki:selected-branch-id', '6')
   useBranchPreferenceStore(pinia).$patch({ branches: [{ id: 6, code: 'MZ-VL', name: 'Mizuki Vĩnh Long', address: '', phone: null, email: null, is_active: true, opening_hours: [] }], selectedBranchId: 6, status: 'success', error: null })
-  mocks.getProductDetail.mockReset(); mocks.getProductListing.mockReset(); mocks.followBrand.mockReset(); mocks.unfollowBrand.mockReset()
+  mocks.getProductDetail.mockReset(); mocks.getProductListing.mockReset(); mocks.getProductReviews.mockReset(); mocks.followBrand.mockReset(); mocks.unfollowBrand.mockReset()
+  cartMocks.getCustomerCart.mockReset(); cartMocks.addCartItem.mockReset(); cartMocks.updateCartItem.mockReset(); cartMocks.removeCartItem.mockReset(); cartMocks.selectCartBranch.mockReset()
   mocks.getProductDetail.mockResolvedValue(detail); mocks.getProductListing.mockResolvedValue(listing)
+  mocks.getProductReviews.mockResolvedValue({ success: true, message: 'OK', data: { summary: { average_rating: 0, total_reviews: 0, rating_distribution: {} }, reviews: [] }, meta: { pagination: { current_page: 1, per_page: 3, total: 0, last_page: 1 } } })
+  cartMocks.getCustomerCart.mockResolvedValue({ id: 1, totalQuantity: 0, totalAmount: 0, discountAmount: 0, totalAfterDiscount: 0, items: [] })
   mocks.followBrand.mockResolvedValue({ follower_count: 803 }); mocks.unfollowBrand.mockResolvedValue({ follower_count: 802 })
 })
-afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks() })
+afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()); document.body.innerHTML = ''; window.localStorage.removeItem('mizuki:selected-branch-id'); vi.restoreAllMocks() })
 
 describe('customer product detail page', () => {
   it('loads the exact runtime slug from the real detail contract', async () => {
@@ -144,6 +157,7 @@ describe('customer product detail page', () => {
     const secondUrl = 'http://localhost:8000/storage/catalog/products/runtime/two.jpg'
     mocks.getProductDetail.mockResolvedValueOnce(detailResponse({
       slug: testSlug,
+    }, {
       images: [
         { id: 1, image_url: firstUrl, alt_text: 'Ảnh chính', sort_order: 0 },
         { id: 2, image_url: secondUrl, alt_text: 'Ảnh phụ', sort_order: 1 },
@@ -153,19 +167,19 @@ describe('customer product detail page', () => {
 
     const { wrapper } = await mountDetail(`/products/${testSlug}`)
     const frame = wrapper.get('[data-gallery-frame]')
-    expect(frame.classes()).toEqual(expect.arrayContaining(['h-80', 'lg:h-[28rem]', 'xl:h-[30rem]']))
+    expect(frame.classes()).toEqual(expect.arrayContaining(['h-72', 'sm:h-80', 'lg:h-[25rem]', 'xl:h-[27rem]']))
     expect(frame.classes()).toContain('bg-white')
     expect(frame.classes()).not.toContain('aspect-square')
     expect(frame.classes()).not.toContain('bg-gradient-to-br')
     const mainImage = wrapper.get('[data-detail-main-image]')
     expect(mainImage.attributes('src')).toBe(firstUrl)
-    expect(mainImage.classes()).toEqual(expect.arrayContaining(['object-contain', 'p-2', 'sm:p-3']))
+    expect(mainImage.classes()).toEqual(expect.arrayContaining(['object-contain', 'p-2', 'sm:p-2.5']))
 
     const thumbnails = wrapper.findAll('[data-thumbnail-id]')
     expect(thumbnails).toHaveLength(2)
     expect(thumbnails.every((thumbnail) => thumbnail.classes().includes('bg-white'))).toBe(true)
     expect(thumbnails.every((thumbnail) => !thumbnail.classes().includes('bg-gradient-to-br'))).toBe(true)
-    expect(thumbnails[0]!.get('img').classes()).toContain('p-0.5')
+    expect(thumbnails[0]!.get('img').classes()).toContain('p-1')
     await thumbnails[1]!.trigger('click')
     expect(wrapper.get('[data-detail-main-image]').attributes('src')).toBe(secondUrl)
   })
@@ -173,9 +187,7 @@ describe('customer product detail page', () => {
   it('uses the real backend brand ID in the listing link', async () => {
     const { wrapper } = await mountDetail()
     const href = wrapper.get('[data-brand-products-link]').attributes('href')
-    expect(href).toContain('brand_id=91')
-    expect(href).toContain('page=1')
-    expect(href).not.toContain('brand=DHC')
+    expect(href).toBe('/brand/dhc')
   })
 
   it('maps root-level brand aggregates separately from product metrics', async () => {
@@ -207,24 +219,24 @@ describe('customer product detail page', () => {
     expect(wrapper.get('[data-product-hero]').classes()).toEqual(expect.arrayContaining([
       'grid',
       'items-start',
-      'gap-8',
+      'gap-0',
       'lg:grid-cols-[minmax(0,0.96fr)_minmax(0,1.04fr)]',
     ]))
     expect(wrapper.get('[data-product-info]').classes()).toEqual(expect.arrayContaining([
-      'rounded-[2rem]',
+      'rounded-4xl',
       'bg-white',
       'sm:p-6',
     ]))
-    expect(wrapper.get('[data-shipping-summary]').classes()).toContain('items-center')
-    expect(wrapper.get('[data-pickup-summary]').classes()).toContain('items-center')
+    expect(wrapper.get('[data-shipping-summary]').classes()).toContain('items-start')
+    expect(wrapper.find('[data-pickup-summary]').exists()).toBe(false)
 
     for (const selector of ['#description', '#ingredients', '#usage']) {
       const section = wrapper.get(selector)
-      expect(section.classes()).toEqual(expect.arrayContaining(['rounded-[2rem]', 'bg-white', 'sm:p-8']))
+      expect(section.classes()).toEqual(expect.arrayContaining(['rounded-4xl', 'bg-white', 'sm:p-8']))
       expect(section.classes().some((className) => className.startsWith('min-h-'))).toBe(false)
     }
     expect(wrapper.find('[data-usage-steps]').exists()).toBe(false)
-    expect(wrapper.get('[data-usage-prose]').text()).toContain('Uống theo hướng dẫn.')
+    expect(wrapper.get('#usage').text()).toContain('Uống theo hướng dẫn.')
   })
 
   it('collapses a very long backend description without replacing its content', async () => {
@@ -235,10 +247,11 @@ describe('customer product detail page', () => {
 
     const content = wrapper.get('[data-description-content]')
     expect(content.text()).toContain(longDescription.trim())
-    expect(content.classes()).toEqual(expect.arrayContaining(['max-h-64', 'overflow-hidden']))
-    await wrapper.get('[data-description-toggle]').trigger('click')
-    expect(wrapper.get('[data-description-content]').classes()).not.toContain('max-h-64')
-    expect(wrapper.get('[data-description-toggle]').text()).toBe('Thu gọn')
+    expect(content.classes()).toEqual(expect.arrayContaining(['max-h-80', 'overflow-hidden']))
+    const toggle = wrapper.findAll('button').find((button) => button.text() === 'Xem thêm')
+    expect(toggle).toBeDefined()
+    await toggle?.trigger('click')
+    expect(wrapper.get('[data-description-content]').classes()).not.toContain('max-h-80')
   })
 
   it('does not invent sold count and uses the honest brand wordmark fallback', async () => {
@@ -246,6 +259,84 @@ describe('customer product detail page', () => {
     expect(wrapper.find('[data-sold-count]').exists()).toBe(false)
     expect(wrapper.find('[data-brand-logo]').exists()).toBe(false)
     expect(wrapper.get('[data-brand-wordmark]').text()).toBe('D')
+  })
+
+  it('does not subtract a matching variant already in a cart for another branch', async () => {
+    authenticateCustomer(710)
+    cartMocks.getCustomerCart.mockResolvedValueOnce({
+      id: 1,
+      branch: { id: 5, name: 'Mizuki Cần Thơ', address: 'Cần Thơ' },
+      totalQuantity: 20,
+      totalAmount: 1800000,
+      discountAmount: 0,
+      totalAfterDiscount: 1800000,
+      items: [{
+        id: 1,
+        product: { id: 2406, name: detail.data.product.name, slug },
+        variant: { id: 2421, name: 'Gói 20 ngày', sku: 'HS-242388', effectivePrice: 90000 },
+        quantity: 20,
+        subtotal: 1800000,
+        availableQuantity: 20,
+        stockWarning: false,
+      }],
+    })
+    const { wrapper } = await mountDetail()
+
+    expect(wrapper.get('button[aria-label="Tăng số lượng"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('uses selected-branch variant inventory minus the same cart line quantity', async () => {
+    authenticateCustomer(711)
+    cartMocks.getCustomerCart.mockResolvedValueOnce({
+      id: 1,
+      branch: { id: 6, name: 'Mizuki Vĩnh Long', address: 'Vĩnh Long' },
+      totalQuantity: 2,
+      totalAmount: 180000,
+      discountAmount: 0,
+      totalAfterDiscount: 180000,
+      items: [{
+        id: 1,
+        product: { id: 2406, name: detail.data.product.name, slug },
+        variant: { id: 2421, name: 'Gói 20 ngày', sku: 'HS-242388', effectivePrice: 90000 },
+        quantity: 2,
+        subtotal: 180000,
+        availableQuantity: 3,
+        stockWarning: false,
+      }],
+    })
+    const { wrapper } = await mountDetail()
+
+    expect(adaptProductDetail(detail).branches[0]?.availableQuantity).toBe(3)
+    expect(wrapper.get('button[aria-label="Tăng số lượng"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows the backend inventory validation detail when adding to cart fails', async () => {
+    authenticateCustomer(712)
+    cartMocks.addCartItem.mockRejectedValueOnce({
+      message: 'Dữ liệu không hợp lệ',
+      validationErrors: {
+        quantity: ['Số lượng sản phẩm bạn chọn vượt quá số lượng tồn kho của chi nhánh.'],
+      },
+    })
+    const { wrapper } = await mountDetail()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('Thêm vào giỏ'))?.trigger('click')
+    await flushPromises()
+
+    expect(cartMocks.addCartItem).toHaveBeenCalledWith(2421, 1)
+    expect(wrapper.text()).toContain('Số lượng sản phẩm bạn chọn vượt quá số lượng tồn kho của chi nhánh.')
+  })
+
+  it('shows a non-blocking success toast after adding a detail variant to the server cart', async () => {
+    authenticateCustomer(713)
+    cartMocks.addCartItem.mockResolvedValueOnce({ id: 1, totalQuantity: 1, totalAmount: 90000, discountAmount: 0, totalAfterDiscount: 90000, items: [] })
+    const { wrapper } = await mountDetail()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('Thêm vào giỏ'))?.trigger('click')
+    await flushPromises()
+
+    expect(cartMocks.addCartItem).toHaveBeenCalledWith(2421, 1)
+    expect(document.body.textContent).toContain('Đã thêm sản phẩm vào giỏ hàng.')
   })
 
   it('renders the root-level brand logo and keeps the brand action available', async () => {
@@ -266,7 +357,7 @@ describe('customer product detail page', () => {
     const { wrapper } = await mountDetail(`/products/${testSlug}`)
     expect(wrapper.get('[data-brand-logo]').attributes('src')).toBe('http://localhost:8000/storage/catalog/brands/dhc.png')
     expect(wrapper.find('[data-brand-wordmark]').exists()).toBe(false)
-    expect(wrapper.get('[data-brand-products-link]').attributes('href')).toContain('brand_id=91')
+    expect(wrapper.get('[data-brand-products-link]').attributes('href')).toBe('/brand/dhc')
   })
 
   it('follows and unfollows the real brand ID while using response follower counts', async () => {
@@ -323,9 +414,9 @@ describe('customer product detail page', () => {
     const testSlug = 'runtime-product-with-feedback'
     mocks.getProductDetail.mockResolvedValueOnce(detailResponse({
       slug: testSlug,
+    }, {
       rating: 4.5,
       review_count: 2,
-    }, {
       reviews: [
         {
           id: 71,
@@ -337,19 +428,24 @@ describe('customer product detail page', () => {
         },
         { id: 72, rating: 4, content: 'Đánh giá không kèm thông tin người gửi.' },
       ],
-      qa: [
+      questions_and_answers: [
         {
           id: 81,
           question: 'Có thể dùng sau bữa sáng không?',
-          answer: 'Có thể dùng theo hướng dẫn trên bao bì.',
-          customer_name: 'Trần Bình',
-          created_at: '2026-07-21',
-          responder_name: 'Dược sĩ Minh',
-          answered_at: '2026-07-22',
+          author: 'Trần Bình',
+          date: '2026-07-21',
+          answers: [{ id: 1, text: 'Có thể dùng theo hướng dẫn trên bao bì.', author: 'Dược sĩ Minh', date: '2026-07-22' }],
         },
         { id: 82, question: 'Sản phẩm này còn câu trả lời không?' },
       ],
     }))
+    mocks.getProductReviews.mockResolvedValueOnce({ success: true, message: 'OK', data: {
+      summary: { average_rating: 4.5, total_reviews: 2, rating_distribution: { '5': 1, '4': 1 } },
+      reviews: [
+        { id: 71, customer: { id: 1, display_name: 'Nguyễn An', avatar_url: null }, rating: 5, content: 'Sản phẩm phù hợp với tôi.', reviewed_at: '2026-07-20', verified_purchase: true },
+        { id: 72, customer: { id: null, display_name: null, avatar_url: null }, rating: 4, content: 'Đánh giá không kèm thông tin người gửi.', reviewed_at: null, verified_purchase: false },
+      ],
+    }, meta: { pagination: { current_page: 1, per_page: 3, total: 2, last_page: 1 } } })
 
     const { wrapper } = await mountDetail(`/products/${testSlug}`)
     const review = wrapper.get('[data-product-review]')
@@ -365,11 +461,11 @@ describe('customer product detail page', () => {
     expect(question.text()).toContain('Có thể dùng theo hướng dẫn trên bao bì.')
     expect(question.text()).toContain('Trần Bình')
     expect(question.text()).toContain('2026-07-21')
-    expect(question.text()).toContain('Dược sĩ Minh trả lời:')
+    expect(question.text()).toContain('Dược sĩ Minh trả lời')
     expect(question.text()).toContain('2026-07-22')
     expect(wrapper.findAll('[data-product-question]')).toHaveLength(2)
     expect(wrapper.find('[data-question-empty]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Khách hàng Mizuki')
+    expect(wrapper.get('[data-product-review]').text()).toContain('Nguyễn An')
     expect(wrapper.text()).not.toContain('Chưa có phản hồi.')
   })
 
@@ -377,16 +473,16 @@ describe('customer product detail page', () => {
     const testSlug = 'runtime-product-without-feedback'
     mocks.getProductDetail.mockResolvedValueOnce(detailResponse({
       slug: testSlug,
+    }, {
       rating: 0,
       review_count: 0,
-    }, {
       reviews: [],
-      qa: [],
+      questions_and_answers: [],
     }))
 
     const { wrapper } = await mountDetail(`/products/${testSlug}`)
-    expect(wrapper.get('[data-review-empty]').text()).toContain('Chưa có nội dung đánh giá')
-    expect(wrapper.find('[data-review-summary]').exists()).toBe(false)
+    expect(wrapper.get('[data-review-empty]').text()).toContain('Chưa có đánh giá phù hợp')
+    expect(wrapper.get('[data-review-summary]').text()).toContain('0 lượt đánh giá')
     expect(wrapper.get('[data-question-empty]').text()).toContain('Chưa có câu hỏi nào')
     expect(wrapper.find('[data-product-review]').exists()).toBe(false)
     expect(wrapper.find('[data-product-question]').exists()).toBe(false)

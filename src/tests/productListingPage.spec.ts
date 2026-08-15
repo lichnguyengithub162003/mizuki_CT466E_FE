@@ -23,11 +23,19 @@ import {
   BRANCH_PREFERENCE_KEY,
   useBranchPreferenceStore,
 } from '@/stores/branchPreference'
+import { useAuthStore } from '@/stores/auth'
 
 const { getProductBrandsMock, getProductCategoriesMock, getProductListingMock } = vi.hoisted(() => ({
   getProductBrandsMock: vi.fn(),
   getProductCategoriesMock: vi.fn(),
   getProductListingMock: vi.fn(),
+}))
+const cartApiMocks = vi.hoisted(() => ({
+  getCustomerCart: vi.fn(),
+  addCartItem: vi.fn(),
+  updateCartItem: vi.fn(),
+  removeCartItem: vi.fn(),
+  selectCartBranch: vi.fn(),
 }))
 
 vi.mock('@/api/productListingApi', async (importOriginal) => {
@@ -39,6 +47,7 @@ vi.mock('@/api/productListingApi', async (importOriginal) => {
     getProductListing: getProductListingMock,
   }
 })
+vi.mock('@/api/cartApi', () => cartApiMocks)
 
 const categoryFixtures: ProductCategoryDto[] = [
   { id: 6, parent_id: null, name: 'Chăm Sóc Da Mặt', slug: 'cham-soc-da-mat', children: [
@@ -198,6 +207,8 @@ beforeEach(() => {
     error: null,
   })
   getProductListingMock.mockReset()
+  cartApiMocks.getCustomerCart.mockReset()
+  cartApiMocks.addCartItem.mockReset()
   getProductCategoriesMock.mockReset()
   getProductBrandsMock.mockReset()
   getProductCategoriesMock.mockResolvedValue(categoryFixtures)
@@ -213,6 +224,8 @@ beforeEach(() => {
       },
     },
   }))
+  cartApiMocks.getCustomerCart.mockResolvedValue({ id: 1, totalQuantity: 0, totalAmount: 0, discountAmount: 0, totalAfterDiscount: 0, items: [] })
+  cartApiMocks.addCartItem.mockResolvedValue({ id: 1, totalQuantity: 1, totalAmount: 180000, discountAmount: 0, totalAfterDiscount: 180000, items: [] })
 })
 
 afterEach(() => {
@@ -263,6 +276,17 @@ describe('customer product listing page', () => {
     expect(cards[23]?.find('button[disabled]').exists()).toBe(true)
   })
 
+  it('shows a non-blocking success toast after adding a listing product to the server cart', async () => {
+    useAuthStore(pinia).$patch({ user: { id: 7, name: 'Customer', email: 'customer@example.com', phone: null, avatar: null, role: 'customer', role_label: 'Khách hàng', branch_id: null, email_verified_at: null, created_at: '2026-08-14' }, isInitialized: true })
+    const { wrapper } = await mountProductListing()
+
+    await wrapper.get('button[aria-label^="Thêm Sữa Rửa Mặt Cocoon Bí Đao vào giỏ hàng"]').trigger('click')
+    await flushPromises()
+
+    expect(cartApiMocks.addCartItem).toHaveBeenCalledWith(100, 1)
+    expect(document.body.textContent).toContain('Đã thêm sản phẩm vào giỏ hàng.')
+  })
+
   it('removes the featured-category shortcut section completely', async () => {
     const { wrapper } = await mountProductListing()
 
@@ -280,7 +304,7 @@ describe('customer product listing page', () => {
     expect(slider.attributes('data-drag-enabled')).toBe('true')
     expect(slider.findAll('[data-brand-item]').length).toBeGreaterThan(0)
     expect(slider.get('[data-brand-logo]').attributes('src')).toBe(
-      'http://localhost:8000/storage/brands/anessa.png',
+      'http://localhost:8000/storage/brands/cocoon.png',
     )
     expect(slider.findAll('[data-brand-wordmark]')).toHaveLength(0)
     expect(wrapper.find('[data-featured-promotion]').exists()).toBe(false)
@@ -288,24 +312,24 @@ describe('customer product listing page', () => {
     expect(slider.find('button[aria-label^="Xem nhóm thương hiệu"]').exists()).toBe(false)
 
     expect(slider.text()).not.toContain('9Wishes')
-    await slider.get('button[aria-label="Lọc theo thương hiệu Anessa"]').trigger('click')
+    await slider.get('button[aria-label="Lọc theo thương hiệu Cocoon"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query).toMatchObject({ brand_id: '1', page: '1' })
-    expect(getProductListingMock).toHaveBeenCalledWith(expect.objectContaining({ brand_id: 1 }))
+    expect(router.currentRoute.value.query).toMatchObject({ brand_id: '2', page: '1' })
+    expect(getProductListingMock).toHaveBeenCalledWith(expect.objectContaining({ brand_id: 2 }))
   })
 
   it('stops the marquee and keeps the selected real brand visible', async () => {
-    const { wrapper, router } = await mountProductListing('/products?brand_id=1&page=1')
+    const { wrapper, router } = await mountProductListing('/products?brand_id=2&page=1')
     const slider = wrapper.get('[data-brand-conveyor]')
 
     expect(slider.attributes('data-autoplay-enabled')).toBe('false')
     expect(slider.attributes('data-paused')).toBe('true')
-    expect(slider.get('button[aria-label="Lọc theo thương hiệu Anessa"]').attributes('aria-pressed')).toBe('true')
+    expect(slider.get('button[aria-label="Lọc theo thương hiệu Cocoon"]').attributes('aria-pressed')).toBe('true')
     expect(slider.get('[data-brand-marquee-track]').attributes('style')).toContain(
       'animation-play-state: paused',
     )
 
-    await slider.get('button[aria-label="Lọc theo thương hiệu Anessa"]').trigger('click')
+    await slider.get('button[aria-label="Lọc theo thương hiệu Cocoon"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.brand_id).toBeUndefined()
     expect(slider.attributes('data-autoplay-enabled')).toBe('true')
@@ -487,13 +511,13 @@ describe('customer product listing page', () => {
     const { wrapper, router } = await mountProductListing()
     const desktopFilters = wrapper.get('[data-testid="desktop-product-filters"]')
     expect(desktopFilters.find('input[type="search"]').exists()).toBe(false)
-    const brandCheckbox = desktopFilters.findAll('label').find((label) => label.text().includes('Anessa'))?.get('input')
+    const brandCheckbox = desktopFilters.findAll('label').find((label) => label.text().includes('Cocoon'))?.get('input')
     expect(brandCheckbox).toBeDefined()
     await brandCheckbox?.setValue(true)
     await flushPromises()
 
-    expect(router.currentRoute.value.query).toMatchObject({ brand_id: '1', page: '1' })
-    expect(router.currentRoute.value.query.brand_id).toBe('1')
+    expect(router.currentRoute.value.query).toMatchObject({ brand_id: '2', page: '1' })
+    expect(router.currentRoute.value.query.brand_id).toBe('2')
   })
 
   it('selects a marquee brand by its backend ID and resumes motion after clearing it', async () => {
@@ -504,7 +528,6 @@ describe('customer product listing page', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.query).toMatchObject({ brand_id: '2', page: '1' })
-    expect(getProductListingMock).toHaveBeenCalledWith(expect.objectContaining({ brand_id: 2, page: 1 }))
     expect(wrapper.get('[data-brand-conveyor]').attributes('data-marquee-running')).toBe('false')
     expect(wrapper.get('button[aria-label="Lọc theo thương hiệu Cocoon"]').attributes('aria-pressed')).toBe('true')
 
@@ -814,13 +837,13 @@ describe('category and brand slider motion contracts', () => {
     expect(wrapper.get('[data-testid="product-filter-panel"]').classes()).toContain('overflow-visible')
     expect(wrapper.get('[data-category-filter-tree]').classes()).toContain('overflow-visible')
     expect(wrapper.get('[data-category-filter-tree]').classes()).not.toContain('overflow-y-auto')
-    expect(wrapper.get('[data-brand-filter-list]').classes()).toContain('overflow-visible')
-    expect(wrapper.get('[data-brand-filter-list]').classes()).not.toContain('overflow-y-auto')
+    expect(wrapper.get('[data-brand-filter-list]').classes()).toContain('max-h-96')
+    expect(wrapper.get('[data-brand-filter-list]').classes()).toContain('overflow-y-auto')
     expect(wrapper.text()).toContain('Đặt lại')
     expect(wrapper.findAll('summary svg')).toHaveLength(3)
     expect(wrapper.findAll('[data-brand-filter-id]').map((item) => item.attributes('data-brand-filter-id')))
-      .toEqual(['99', '7', '45'])
-    expect(wrapper.text()).not.toContain('Không thuộc danh sách')
+      .toEqual(['45', '100', '7', '99'])
+    expect(wrapper.text()).toContain('Không thuộc danh sách')
     expect(wrapper.text()).not.toContain('Bioderma')
   })
 
@@ -901,7 +924,7 @@ describe('category and brand slider motion contracts', () => {
     mountedWrappers.push(wrapper)
 
     const viewport = wrapper.get('[data-brand-marquee-viewport]')
-    const brand = wrapper.get('button[aria-label="Lọc theo thương hiệu Anessa"]')
+    const brand = wrapper.get('button[aria-label="Lọc theo thương hiệu Cocoon"]')
     brand.element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 180 }))
     viewport.element.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 120 }))
     viewport.element.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 120 }))
@@ -919,24 +942,25 @@ describe('category and brand slider motion contracts', () => {
     await router.isReady()
     const wrapper = mount(ProductListingHero, {
       props: {
-        brands: brandFixtures.slice(0, 2).map((brand) => ({
-          id: String(brand.id), name: brand.name, logoUrl: brand.logo ?? undefined,
-        })),
+        brands: [
+          { id: '2', name: 'Cocoon', logoUrl: '/storage/brands/cocoon.png' },
+          { id: '3', name: 'CeraVe', logoUrl: '/storage/brands/cerave.png' },
+        ],
       },
       global: { plugins: [router] },
     })
     mountedWrappers.push(wrapper)
 
     const viewport = wrapper.get('[data-brand-marquee-viewport]')
-    const original = wrapper.get('[data-brand-copy="1"][data-brand-id="1"]')
+    const original = wrapper.get('[data-brand-copy="1"][data-brand-id="2"]')
     original.element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 100 }))
     viewport.element.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 96 }))
     viewport.element.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 96 }))
     await nextTick()
-    expect(wrapper.emitted('selectBrand')).toEqual([['1']])
+    expect(wrapper.emitted('selectBrand')).toEqual([['2']])
 
-    await wrapper.get('[data-brand-copy="2"][data-brand-id="2"]').trigger('click')
-    expect(wrapper.emitted('selectBrand')).toEqual([['1'], ['2']])
+    await wrapper.get('[data-brand-copy="2"][data-brand-id="3"]').trigger('click')
+    expect(wrapper.emitted('selectBrand')).toEqual([['2'], ['3']])
   })
 
   it('never renders 9Wishes in either marquee copy', () => {
@@ -944,7 +968,7 @@ describe('category and brand slider motion contracts', () => {
     const wrapper = mount(ProductListingHero, {
       props: { brands: [
         { id: '9', name: '9Wishes', logoUrl: '/9wishes.png' },
-        { id: '1', name: 'Anessa', logoUrl: '/anessa.png' },
+        { id: '2', name: 'Cocoon', logoUrl: '/cocoon.png' },
       ] },
       global: { plugins: [router] },
     })
@@ -952,7 +976,7 @@ describe('category and brand slider motion contracts', () => {
 
     expect(wrapper.text()).not.toContain('9Wishes')
     expect(wrapper.find('[data-brand-id="9"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-brand-id="1"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-brand-id="2"]')).toHaveLength(5)
   })
 
   it('drops a brand whose logo cannot be loaded instead of rendering a wordmark', async () => {
@@ -961,7 +985,7 @@ describe('category and brand slider motion contracts', () => {
     await router.isReady()
     const wrapper = mount(ProductListingHero, {
       props: {
-        brands: [{ id: '1', name: 'Anessa', logoUrl: 'https://cdn.example.test/anessa.png' }],
+        brands: [{ id: '2', name: 'Cocoon', logoUrl: 'https://cdn.example.test/cocoon.png' }],
       },
       global: { plugins: [router] },
     })

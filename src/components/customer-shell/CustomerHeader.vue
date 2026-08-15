@@ -12,6 +12,7 @@ import CustomerAccountControl from './CustomerAccountControl.vue'
 const props = defineProps<{
   selectedBranch: CustomerBranch
   activeKey: CustomerNavigationKey
+  cartCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -48,11 +49,11 @@ const emit = defineEmits<{
         <RouterLink
           :to="{ name: ROUTE_NAMES.cart }"
           class="motion-interactive relative grid size-11 place-items-center rounded-xl text-text-secondary hover:bg-primary-50 hover:text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          aria-label="Giỏ hàng, 2 sản phẩm demo"
+          :aria-label="`Giỏ hàng, ${props.cartCount ?? 0} sản phẩm`"
           :aria-current="props.activeKey === 'cart' ? 'page' : undefined"
         >
           <ShoppingBag class="size-5" aria-hidden="true" />
-          <span class="absolute right-1.5 top-1.5 grid size-4 place-items-center rounded-full bg-primary-700 text-[0.625rem] font-semibold text-white">2</span>
+          <span v-if="(props.cartCount ?? 0) > 0" class="absolute right-1.5 top-1.5 grid size-4 place-items-center rounded-full bg-primary-700 text-[0.625rem] font-semibold text-white" data-cart-badge>{{ props.cartCount }}</span>
         </RouterLink>
         <CustomerAccountControl />
       </div>

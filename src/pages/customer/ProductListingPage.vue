@@ -13,12 +13,15 @@ import type { ProductListingRequest } from '@/api/productListingApi'
 import { resolveCatalogAsset } from '@/api/productListingAdapter'
 import { ROUTE_NAMES } from '@/constants/routes'
 import CustomerLayout from '@/layouts/CustomerLayout.vue'
+import { useToast } from '@/components/common/toast'
 import {
   useProductDiscoveryQuery,
   useProductListingQuery,
 } from '@/queries/productListing'
 import { pinia } from '@/stores/pinia'
 import { useBranchPreferenceStore } from '@/stores/branchPreference'
+import { useAuthStore } from '@/stores/auth'
+import { useAddCartItemMutation } from '@/queries/cart'
 import type {
   ProductBackendSort,
   ProductContentState,
@@ -72,6 +75,10 @@ type PaginationItem = number | 'start-ellipsis' | 'end-ellipsis'
 const route = useRoute()
 const router = useRouter()
 const branchStore = useBranchPreferenceStore(pinia)
+const authStore = useAuthStore(pinia)
+const { toast } = useToast()
+const addCartMutation = useAddCartItemMutation(computed(() => authStore.user?.id ?? null))
+const cartFeedback = ref('')
 const mobileFilterOpen = ref(false)
 
 branchStore.restore()
@@ -337,6 +344,23 @@ function openProductDetail(product: ProductListingProduct): void {
   })
 }
 
+async function addListingProductToCart(product: ProductListingProduct): Promise<void> {
+  if (!product.defaultVariantId) return
+  if (!authStore.isAuthenticated || authStore.role !== 'customer') {
+    await router.push({ name: ROUTE_NAMES.login, query: { redirect: route.fullPath } })
+    return
+  }
+  cartFeedback.value = ''
+  try {
+    await addCartMutation.mutateAsync({ productVariantId: product.defaultVariantId, quantity: 1 })
+    toast({ title: 'Đã thêm sản phẩm vào giỏ hàng.', variant: 'success' })
+  } catch (error: unknown) {
+    cartFeedback.value = typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
+      ? error.message
+      : 'Không thể thêm sản phẩm vào giỏ hàng.'
+  }
+}
+
 watch(
   () => listingQuery.data.value?.pagination.lastPage,
   (lastPage) => {
@@ -442,7 +466,9 @@ watch(
                 :state="contentState"
                 @retry="listingQuery.refetch()"
                 @select="openProductDetail"
+                @add-to-cart="addListingProductToCart"
               />
+              <p v-if="cartFeedback" class="mt-3 text-body-sm text-primary-800" role="status">{{ cartFeedback }}</p>
               <div
                 v-if="listingQuery.isFetching.value && products.length > 0"
                 class="pointer-events-none absolute inset-0 rounded-2xl bg-background/35 backdrop-blur-[1px]"

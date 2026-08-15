@@ -79,7 +79,7 @@ onBeforeUnmount(() => {
 <template>
   <slot :toast="toast" :dismiss="dismiss" />
   <div
-    class="pointer-events-none fixed inset-x-4 top-4 z-[80] flex flex-col items-end gap-3 sm:left-auto sm:w-96"
+    class="pointer-events-none fixed inset-x-4 top-27 z-80 flex flex-col items-end gap-3 sm:left-auto sm:w-96"
     role="region"
     :aria-label="props.regionLabel"
     aria-live="polite"

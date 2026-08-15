@@ -70,7 +70,7 @@ const featuredBrandNames = [
 
 const featuredBrands = computed(() =>
   featuredBrandNames.flatMap((name) => {
-    const brand = props.brands.find(
+    const brand = visibleBrands.value.find(
       (item) => item.name.trim().toLowerCase() === name.toLowerCase(),
     )
 

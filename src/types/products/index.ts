@@ -110,6 +110,7 @@ export interface ProductListingProduct extends HomeProduct {
   readonly categoryId: string;
   readonly brandId: string;
   readonly imageUrl?: string;
+  readonly defaultVariantId?: number;
   readonly concernIds?: readonly string[];
   readonly isNew?: boolean;
   readonly isBestseller?: boolean;
@@ -201,8 +202,10 @@ export interface ProductDetailQuestion {
 
 export interface ProductDetailBranch {
   readonly id: string;
+  readonly variantId?: string;
   readonly name: string;
   readonly address: string;
+  readonly availableQuantity?: number;
   readonly stockState: ProductDetailStockState;
   readonly stockLabel: string;
 }

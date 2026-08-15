@@ -1,3 +1,9 @@
+<script setup lang="ts">
+import BaseToastProvider from '@/components/common/BaseToastProvider.vue'
+</script>
+
 <template>
-  <RouterView />
+  <BaseToastProvider>
+    <RouterView />
+  </BaseToastProvider>
 </template>

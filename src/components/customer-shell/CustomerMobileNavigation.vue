@@ -9,6 +9,7 @@ import CustomerAccountControl from './CustomerAccountControl.vue'
 
 const props = defineProps<{
   activeKey: CustomerNavigationKey
+  cartCount?: number
 }>()
 
 const navigationItems: readonly {
@@ -50,6 +51,7 @@ const navigationItems: readonly {
           :class="cn('size-5 shrink-0', props.activeKey === item.key && 'stroke-[2.5]')"
           aria-hidden="true"
         />
+        <span v-if="item.key === 'cart' && (props.cartCount ?? 0) > 0" class="absolute right-2 top-1.5 grid size-4 place-items-center rounded-full bg-primary-700 text-[0.625rem] font-semibold text-white" data-cart-badge>{{ props.cartCount }}</span>
         <span
           v-if="props.activeKey === item.key"
           class="absolute bottom-1.5 h-1 w-3 rounded-pill bg-primary-800"

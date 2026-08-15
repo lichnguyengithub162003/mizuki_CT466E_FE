@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   CustomerAnnouncementBar,
@@ -17,6 +17,8 @@ import {
 } from '@/types/customer-shell'
 import { pinia } from '@/stores/pinia'
 import { useBranchPreferenceStore } from '@/stores/branchPreference'
+import { useAuthStore } from '@/stores/auth'
+import { useCustomerCartQuery, useSelectCartBranchMutation } from '@/queries/cart'
 
 defineSlots<{
   default?: () => unknown
@@ -27,14 +29,21 @@ defineSlots<{
 withDefaults(
   defineProps<{
     hideFloatingUtilities?: boolean
+    compactCartMobile?: boolean
   }>(),
   {
     hideFloatingUtilities: false,
+    compactCartMobile: false,
   },
 )
 
 const route = useRoute()
 const branchStore = useBranchPreferenceStore(pinia)
+const authStore = useAuthStore(pinia)
+const cartQuery = useCustomerCartQuery(computed(() => authStore.user?.id ?? null))
+const selectCartBranchMutation = useSelectCartBranchMutation(computed(() => authStore.user?.id ?? null))
+const cartCount = computed(() => cartQuery.data.value?.items.length ?? 0)
+const synchronizedCartBranchKey = ref<string | null>(null)
 branchStore.restore()
 if (import.meta.env.MODE !== 'test') {
   void branchStore.load()
@@ -93,29 +102,78 @@ const activeKey = computed<CustomerNavigationKey>(() => {
   return 'home'
 })
 
-function updateBranch(branch: CustomerBranch): void {
-  branchStore.selectBranch(Number(branch.id))
+async function updateBranch(branch: CustomerBranch): Promise<void> {
+  const branchId = Number(branch.id)
+  if (!Number.isInteger(branchId) || branchId <= 0) return
+
+  branchStore.selectBranch(branchId)
+
+  await synchronizeCartBranch()
 }
+
+async function synchronizeCartBranch(): Promise<void> {
+  const userId = authStore.user?.id ?? null
+  const selectedBranchId = branchStore.selectedBranchId
+  const cart = cartQuery.data.value
+  if (
+    userId === null ||
+    authStore.role !== 'customer' ||
+    selectedBranchId === null ||
+    !Number.isInteger(selectedBranchId) ||
+    selectedBranchId <= 0 ||
+    !cart
+  ) return
+
+  if (Number(cart.branch?.id) === selectedBranchId) {
+    synchronizedCartBranchKey.value = null
+    return
+  }
+
+  const synchronizationKey = `${userId}:${cart.id}:${selectedBranchId}`
+  if (synchronizedCartBranchKey.value === synchronizationKey) return
+
+  synchronizedCartBranchKey.value = synchronizationKey
+  try {
+    await selectCartBranchMutation.mutateAsync(selectedBranchId)
+  } catch {
+    // The cart query remains on the last backend-confirmed branch after a rejected change.
+  }
+}
+
+watch(
+  [
+    () => authStore.user?.id ?? null,
+    () => authStore.role,
+    () => branchStore.selectedBranchId,
+    () => cartQuery.data.value,
+  ],
+  () => {
+    void synchronizeCartBranch()
+  },
+  { immediate: true },
+)
 
 </script>
 
 <template>
-  <div class="min-h-svh overflow-x-clip bg-background text-foreground">
-    <CustomerAnnouncementBar />
+  <div class="min-h-svh overflow-x-clip bg-background text-foreground" :data-compact-cart-mobile="compactCartMobile || undefined">
+    <CustomerAnnouncementBar :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
     <CustomerHeader
+      :class="compactCartMobile && 'max-[84.999rem]:!hidden'"
       :selected-branch="selectedBranch"
       :active-key="activeKey"
+      :cart-count="cartCount"
       @select-branch="updateBranch"
     />
-    <CustomerMobileHeader :selected-branch="selectedBranch" @select-branch="updateBranch" />
+    <CustomerMobileHeader :class="compactCartMobile && 'max-[84.999rem]:!hidden'" :selected-branch="selectedBranch" @select-branch="updateBranch" />
     <slot name="header-extra" />
-    <main class="min-h-[50svh] pb-24 md:pb-0" tabindex="-1">
+    <main :class="compactCartMobile ? 'h-svh overflow-hidden pb-0 min-[85rem]:h-auto min-[85rem]:min-h-[50svh] min-[85rem]:overflow-visible' : 'min-h-[50svh] pb-24 md:pb-0'" tabindex="-1">
       <slot />
     </main>
-    <CustomerFooter />
+    <CustomerFooter :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
     <slot name="footer-extra" />
-    <CustomerVoucherFloat v-if="!hideFloatingUtilities" />
-    <CustomerBackToTop v-if="!hideFloatingUtilities" />
-    <CustomerMobileNavigation :active-key="activeKey" />
+    <CustomerVoucherFloat v-if="!hideFloatingUtilities" :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
+    <CustomerBackToTop v-if="!hideFloatingUtilities" :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
+    <CustomerMobileNavigation v-if="!compactCartMobile" :active-key="activeKey" :cart-count="cartCount" />
   </div>
 </template>

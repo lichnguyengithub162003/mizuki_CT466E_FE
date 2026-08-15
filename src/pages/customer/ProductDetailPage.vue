@@ -22,6 +22,7 @@ import {
 import { computed, ref, watch, onBeforeUnmount, onMounted } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import BaseButton from "@/components/common/BaseButton.vue";
+import { useToast } from "@/components/common/toast";
 import ProductBranchAvailabilityCarousel from "@/components/products/ProductBranchAvailabilityCarousel.vue";
 import ProductDetailGallery from "@/components/products/ProductDetailGallery.vue";
 import ProductSuggestions from "@/components/products/ProductSuggestions.vue";
@@ -36,6 +37,7 @@ import {
 } from "@/queries/productListing";
 import { pinia } from "@/stores/pinia";
 import { useBranchPreferenceStore } from "@/stores/branchPreference";
+import { useAddCartItemMutation, useCustomerCartQuery } from "@/queries/cart";
 import { useAuthStore } from "@/stores/auth";
 import type {
   ProductContentState,
@@ -195,6 +197,13 @@ const route = useRoute();
 const router = useRouter();
 const branchStore = useBranchPreferenceStore(pinia);
 const authStore = useAuthStore(pinia);
+const { toast } = useToast();
+const addCartMutation = useAddCartItemMutation(
+  computed(() => authStore.user?.id ?? null),
+);
+const cartQuery = useCustomerCartQuery(
+  computed(() => authStore.user?.id ?? null),
+);
 branchStore.restore();
 const retryState = ref<ProductDetailDemoState | null>(null);
 const quantity = ref(1);
@@ -389,16 +398,19 @@ const relatedRequest = computed(() => ({
   page: 1,
   per_page: 8,
 }));
+
 const relatedQuery = useProductListingQuery(
   relatedRequest,
   computed(() => Boolean(product.value)),
 );
+
 const relatedProducts = computed(
   () =>
     relatedQuery.data.value?.products.filter(
       (item) => item.slug !== slug.value,
     ) ?? [],
 );
+
 const brandPageTarget = computed(() => {
   const brandSlug = product.value?.brand.slug;
   return brandSlug ? `/brand/${brandSlug}` : undefined;
@@ -419,6 +431,48 @@ const selectedUnavailable = computed(() => {
   );
 });
 
+const selectedVariantId = computed(() => {
+  const id = Number(selectedVariants.value.variant);
+  return Number.isInteger(id) && id > 0 ? id : null;
+});
+
+const quantityAlreadyInCart = computed(() => {
+  const cart = cartQuery.data.value;
+
+  if (
+    !cart ||
+    !cart.branch ||
+    Number(cart.branch.id) !== Number(branchStore.selectedBranchId) ||
+    selectedVariantId.value === null
+  ) {
+    return 0;
+  }
+
+  return (
+    cart.items.find((item) => item.variant.id === selectedVariantId.value)
+      ?.quantity ?? 0
+  );
+});
+
+const selectedBranchAvailableQuantity = computed(() => {
+  if (selectedVariantId.value === null) return 0;
+
+  return (
+    product.value?.branches.find(
+      (branch) =>
+        branch.id === String(branchStore.selectedBranchId) &&
+        branch.variantId === String(selectedVariantId.value),
+    )?.availableQuantity ?? 0
+  );
+});
+
+const remainingQuantity = computed(() =>
+  Math.max(
+    0,
+    selectedBranchAvailableQuantity.value - quantityAlreadyInCart.value,
+  ),
+);
+
 const purchaseStock = computed<{
   state: ProductDetailStockState;
   label: string;
@@ -426,20 +480,38 @@ const purchaseStock = computed<{
   if (requestedState.value === "out-of-stock") {
     return { state: "out-of-stock", label: "Tạm hết hàng" };
   }
+
   if (requestedState.value === "low-stock") {
     return { state: "low-stock", label: "Chỉ còn ít sản phẩm" };
   }
+
   if (selectedUnavailable.value) {
     return { state: "out-of-stock", label: "Phân loại này tạm hết hàng" };
   }
-  const selectedBranch = product.value?.branches.find(
-    (branch) => branch.id === String(branchStore.selectedBranchId),
-  );
-  if (selectedBranch)
+
+  if (remainingQuantity.value === 0) {
     return {
-      state: selectedBranch.stockState,
-      label: selectedBranch.stockLabel,
+      state: "out-of-stock",
+      label: "Bạn đã chọn hết số lượng hiện có vào giỏ hàng",
     };
+  }
+
+  if (quantityAlreadyInCart.value > 0) {
+    return {
+      state: remainingQuantity.value <= 5 ? "low-stock" : "available",
+      label: `Bạn có thể thêm tối đa ${remainingQuantity.value} sản phẩm nữa`,
+    };
+  }
+  if (selectedBranchAvailableQuantity.value > 0) {
+    return {
+      state:
+        selectedBranchAvailableQuantity.value <= 5 ? "low-stock" : "available",
+      label:
+        selectedBranchAvailableQuantity.value <= 5
+          ? "Sắp hết hàng"
+          : "Còn hàng",
+    };
+  }
   return {
     state: product.value?.stockState ?? "out-of-stock",
     label: product.value?.stockLabel ?? "Tạm hết hàng",
@@ -604,7 +676,7 @@ async function toggleBrandFollow(): Promise<void> {
 }
 
 function setQuantity(nextQuantity: number): void {
-  const maximum = product.value?.maxQuantity ?? 1;
+  const maximum = Math.max(remainingQuantity.value, 1);
   quantity.value = Math.min(Math.max(nextQuantity, 1), maximum);
 }
 
@@ -625,17 +697,61 @@ function chooseVariant(groupId: string, optionId: string): void {
   purchaseFeedback.value = "";
 }
 
-function submitPurchase(action: "cart" | "buy"): void {
+function purchaseErrorMessage(error: unknown): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "validationErrors" in error
+  ) {
+    const validationErrors = error.validationErrors;
+
+    if (typeof validationErrors === "object" && validationErrors !== null) {
+      for (const messages of Object.values(validationErrors)) {
+        if (!Array.isArray(messages)) continue;
+        const message = messages.find(
+          (candidate): candidate is string =>
+            typeof candidate === "string" && candidate.trim().length > 0,
+        );
+        if (message) return message;
+      }
+    }
+  }
+
+  return typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+    ? error.message
+    : "Không thể thêm sản phẩm vào giỏ hàng.";
+}
+
+async function submitPurchase(action: "cart" | "buy"): Promise<void> {
   if (purchaseDisabled.value) return;
 
-  purchaseFeedback.value =
-    action === "cart"
-      ? `Đã chọn ${quantity.value} sản phẩm để thêm vào giỏ hàng.`
-      : "Đã chuẩn bị sản phẩm cho bước mua ngay.";
-
   if (action === "cart") {
-    void router.push({ name: ROUTE_NAMES.cart });
+    const variantId = Number(selectedVariants.value.variant);
+    if (!Number.isInteger(variantId) || variantId <= 0) return;
+    if (!authStore.isAuthenticated || authStore.role !== "customer") {
+      await router.push({
+        name: ROUTE_NAMES.login,
+        query: { redirect: route.fullPath },
+      });
+      return;
+    }
+    try {
+      await addCartMutation.mutateAsync({
+        productVariantId: variantId,
+        quantity: quantity.value,
+      });
+      purchaseFeedback.value = "";
+      toast({ title: "Đã thêm sản phẩm vào giỏ hàng.", variant: "success" });
+    } catch (error: unknown) {
+      purchaseFeedback.value = purchaseErrorMessage(error);
+    }
+    return;
   }
+
+  purchaseFeedback.value = "Đã chuẩn bị sản phẩm cho bước mua ngay.";
 }
 
 function submitQuestion(): void {
@@ -1017,7 +1133,7 @@ onBeforeUnmount(() => {
                     @change="chooseVariant(group.id, option.id)"
                   />
                   <span
-                    class="motion-interactive inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-primary-200 bg-white px-4 text-body-sm font-medium text-primary-950 peer-checked:border-primary-800 peer-checked:bg-primary-50 peer-checked:ring-1 peer-checked:ring-primary-700 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring"
+                    class="motion-interactive inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-primary-200 bg-white px-4 text-body-sm font-medium text-primary-950 peer-checked:border-primary-800 peer-checked:bg-primary-50 peer-checked:ring-1 peer-checked:ring-primary-700 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring"
                   >
                     {{ option.label }}
                     <span
@@ -1070,7 +1186,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="grid size-11 shrink-0 place-items-center text-primary-900 hover:bg-primary-50 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:opacity-40"
                     aria-label="Tăng số lượng"
-                    :disabled="quantity >= product.maxQuantity"
+                    :disabled="quantity >= remainingQuantity"
                     @click="setQuantity(quantity + 1)"
                   >
                     <Plus class="size-4" aria-hidden="true" />
@@ -1391,7 +1507,7 @@ onBeforeUnmount(() => {
 
               <div
                 v-if="descriptionIsLong && !descriptionExpanded"
-                class="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-white via-white/80 to-transparent"
+                class="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-white via-white/80 to-transparent"
                 aria-hidden="true"
               />
             </div>

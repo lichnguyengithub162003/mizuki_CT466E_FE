@@ -1,168 +1,83 @@
 <script setup lang="ts">
-import { Heart, Minus, PackageOpen, Plus, Trash2 } from '@lucide/vue'
+import { AlertTriangle, Minus, PackageOpen, Plus, Trash2 } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ROUTE_NAMES } from '@/constants/routes'
-import type { CartItem } from '@/types/customer'
-import { cn } from '@/utils/cn'
+import type { CustomerCartItem } from '@/types/cart'
 
-const props = defineProps<{
-  item: CartItem
-}>()
+const props = withDefaults(defineProps<{
+  item: CustomerCartItem
+  pending?: boolean
+  selected?: boolean
+}>(), {
+  pending: false,
+  selected: true,
+})
 
 const emit = defineEmits<{
-  toggle: [id: string]
-  increment: [id: string]
-  decrement: [id: string]
-  remove: [id: string]
-  moveToFavorites: [id: string]
-  changeVariant: [id: string]
-  changeBranch: [id: string]
+  toggle: [id: number]
+  increment: [id: number]
+  decrement: [id: number]
+  remove: [id: number]
 }>()
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN', {
   style: 'currency',
   currency: 'VND',
 })
-
-const isAvailable = computed(() => props.item.stockState === 'available')
-
-const toneClasses: Record<CartItem['product']['tone'], string> = {
-  mint: 'bg-[#e3f1eb]',
-  rose: 'bg-[#f3e5e2]',
-  sand: 'bg-[#f2eadc]',
-  sky: 'bg-[#e4eef2]',
-  lilac: 'bg-[#ebe8f5]',
-}
+const unavailable = computed(() => props.item.stockWarning || props.item.availableQuantity <= 0)
+const atInventoryLimit = computed(() => props.item.quantity >= props.item.availableQuantity)
 </script>
 
 <template>
   <article
-    class="rounded-3xl border border-primary-100 bg-white p-4 shadow-xs sm:p-5"
-    :aria-labelledby="`cart-name-${props.item.id}`"
+    class="group rounded-xl border border-primary-100 bg-white p-2.5 shadow-xs transition-[border-color,box-shadow] duration-200 hover:border-primary-200 hover:shadow-sm min-[85rem]:rounded-2xl min-[85rem]:p-4"
+    :aria-labelledby="`cart-item-name-${props.item.id}`"
     data-cart-item
-    :data-cart-stock="props.item.stockState"
+    :data-cart-stock="unavailable ? 'unavailable' : 'available'"
   >
-    <div class="flex min-w-0 items-start gap-3 sm:gap-4">
-      <label class="mt-1 grid size-11 flex-none cursor-pointer place-items-center rounded-xl hover:bg-primary-50">
+    <div class="grid min-w-0 grid-cols-[auto_4.25rem_minmax(0,1fr)] items-center gap-2 min-[85rem]:grid-cols-[auto_5.5rem_minmax(12rem,1fr)_7.25rem_7.25rem_7.5rem_2.5rem] min-[85rem]:gap-4">
+      <label class="-ml-1 grid size-10 cursor-pointer place-items-center rounded-lg transition-colors hover:bg-primary-50 min-[85rem]:ml-0 min-[85rem]:size-8" :class="unavailable && 'cursor-not-allowed opacity-50'">
         <span class="sr-only">Chọn {{ props.item.product.name }}</span>
-        <input
-          type="checkbox"
-          class="size-5 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          :checked="props.item.selected"
-          :disabled="!isAvailable"
-          :aria-label="`Chọn ${props.item.product.name}`"
-          @change="emit('toggle', props.item.id)"
-        />
+        <input type="checkbox" class="size-5 accent-primary" :checked="props.selected" :disabled="unavailable" :aria-label="`Chọn ${props.item.product.name}`" @change="emit('toggle', props.item.id)" />
       </label>
 
-      <div :class="cn('grid size-24 flex-none place-items-center rounded-2xl sm:size-28', toneClasses[props.item.product.tone])">
-        <PackageOpen class="size-9 text-primary-700 opacity-75" aria-hidden="true" />
-      </div>
+      <RouterLink :to="{ name: ROUTE_NAMES.productDetail, params: { slug: props.item.product.slug } }" class="grid size-17 place-items-center overflow-hidden rounded-lg border border-primary-100 bg-primary-50 min-[85rem]:size-[5.5rem] min-[85rem]:rounded-xl" :aria-label="`Xem ${props.item.product.name}`">
+        <img v-if="props.item.product.imageUrl" :src="props.item.product.imageUrl" :alt="props.item.product.name" class="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+        <PackageOpen v-else class="size-7 text-primary-600/70" aria-hidden="true" />
+      </RouterLink>
 
-      <div class="min-w-0 flex-1">
-        <p class="text-caption font-semibold uppercase tracking-[0.1em] text-primary-700">
-          {{ props.item.product.brand }}
-        </p>
-        <RouterLink
-          :id="`cart-name-${props.item.id}`"
-          :to="{ name: ROUTE_NAMES.productDetail, params: { slug: props.item.product.slug } }"
-          class="motion-interactive mt-1 block text-body-md font-semibold leading-6 text-primary-950 hover:text-primary-700 focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
+      <div class="min-w-0 self-start pt-0.5 min-[85rem]:self-center min-[85rem]:pt-0">
+        <RouterLink :id="`cart-item-name-${props.item.id}`" :to="{ name: ROUTE_NAMES.productDetail, params: { slug: props.item.product.slug } }" class="line-clamp-2 text-body-sm font-semibold leading-5 text-primary-950 transition-colors hover:text-primary-700 min-[85rem]:text-body-md">
           {{ props.item.product.name }}
         </RouterLink>
-        <p class="mt-1 text-caption text-text-secondary">
-          {{ props.item.variant.label }}: {{ props.item.variant.value }}
-        </p>
-        <strong class="mt-2 block text-body-md font-bold text-[#c8423a]">
-          {{ currencyFormatter.format(props.item.unitPrice) }}
-        </strong>
-      </div>
-    </div>
-
-    <div
-      v-if="!isAvailable"
-      class="mt-4 rounded-2xl border border-[#edcbc7] bg-[#fff5f3] p-3"
-      role="status"
-      data-unavailable-reason
-    >
-      <p class="text-body-sm font-semibold text-[#8f3733]">{{ props.item.unavailableReason }}</p>
-      <p class="mt-1 text-caption text-[#7c514e]">{{ props.item.branchAvailability.label }}</p>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <button
-          v-if="props.item.stockState === 'variant-unavailable'"
-          type="button"
-          class="motion-interactive min-h-10 rounded-xl border border-[#dcaea9] bg-white px-3 text-body-sm font-semibold text-[#7f3935] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          @click="emit('changeVariant', props.item.id)"
-        >
-          Đổi biến thể
-        </button>
-        <button
-          v-if="props.item.stockState === 'branch-unavailable'"
-          type="button"
-          class="motion-interactive min-h-10 rounded-xl border border-[#dcaea9] bg-white px-3 text-body-sm font-semibold text-[#7f3935] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          @click="emit('changeBranch', props.item.id)"
-        >
-          Đổi chi nhánh
-        </button>
-        <RouterLink
-          :to="{ name: ROUTE_NAMES.products, query: { similarTo: props.item.product.id } }"
-          class="motion-interactive inline-flex min-h-10 items-center rounded-xl px-3 text-body-sm font-semibold text-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          Tìm sản phẩm tương tự
-        </RouterLink>
-      </div>
-    </div>
-
-    <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-primary-100 pt-4">
-      <div
-        class="inline-flex h-11 items-center overflow-hidden rounded-xl border border-primary-200 bg-white"
-        data-cart-quantity
-      >
-        <button
-          type="button"
-          class="motion-interactive grid size-11 place-items-center text-primary-900 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-35"
-          :aria-label="`Giảm số lượng ${props.item.product.name}`"
-          :disabled="props.item.quantity <= 1 || !isAvailable"
-          @click="emit('decrement', props.item.id)"
-        >
-          <Minus class="size-4" aria-hidden="true" />
-        </button>
-        <output
-          class="grid min-w-10 place-items-center text-body-sm font-semibold text-primary-950"
-          :aria-label="`Số lượng ${props.item.product.name}`"
-        >
-          {{ props.item.quantity }}
-        </output>
-        <button
-          type="button"
-          class="motion-interactive grid size-11 place-items-center text-primary-900 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-35"
-          :aria-label="`Tăng số lượng ${props.item.product.name}`"
-          :disabled="!isAvailable"
-          @click="emit('increment', props.item.id)"
-        >
-          <Plus class="size-4" aria-hidden="true" />
-        </button>
+        <p class="mt-0.5 text-[0.6875rem] text-text-secondary min-[85rem]:mt-1 min-[85rem]:text-caption">{{ props.item.variant.name }} <span aria-hidden="true" class="mx-1 text-primary-200">•</span> SKU: {{ props.item.variant.sku }}</p>
+        <p class="mt-1.5 text-body-sm font-semibold text-[#bd443d] min-[85rem]:hidden">{{ currencyFormatter.format(props.item.variant.effectivePrice) }} <span class="font-normal text-text-muted">/ sp</span></p>
+        <div v-if="unavailable" class="mt-1.5 flex items-start gap-1.5 text-caption leading-4 text-[#8f3733]" role="status" data-unavailable-reason><AlertTriangle class="mt-0.5 size-3.5 flex-none" aria-hidden="true" /><span>Chỉ còn {{ props.item.availableQuantity }} sản phẩm tại chi nhánh.</span></div>
+        <p v-else-if="atInventoryLimit" class="mt-1.5 flex items-center gap-1.5 text-caption text-[#78551d]" data-inventory-limit><AlertTriangle class="size-3.5 flex-none" aria-hidden="true" />Đã đạt số lượng tối đa.</p>
       </div>
 
-      <div class="flex flex-wrap items-center gap-1">
-        <button
-          type="button"
-          class="motion-interactive inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 text-body-sm font-medium text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          :aria-label="`Chuyển ${props.item.product.name} sang yêu thích`"
-          @click="emit('moveToFavorites', props.item.id)"
-        >
-          <Heart class="size-4" aria-hidden="true" />
-          <span class="hidden sm:inline">Chuyển sang yêu thích</span>
-        </button>
-        <button
-          type="button"
-          class="motion-interactive grid size-10 place-items-center rounded-xl text-[#9b3e3a] hover:bg-[#fff3f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          :aria-label="`Xóa ${props.item.product.name} khỏi giỏ hàng`"
-          @click="emit('remove', props.item.id)"
-        >
-          <Trash2 class="size-4" aria-hidden="true" />
-        </button>
+      <div class="col-span-2 col-start-2 flex flex-wrap items-center justify-between gap-2 border-t border-primary-100 pt-2 min-[85rem]:contents min-[85rem]:border-0 min-[85rem]:pt-0">
+        <div class="hidden min-[85rem]:block" data-unit-price>
+          <p class="text-[0.6875rem] font-medium text-text-secondary">Đơn giá</p>
+          <strong class="mt-1 block text-body-sm text-primary-950">{{ currencyFormatter.format(props.item.variant.effectivePrice) }}</strong>
+        </div>
+
+        <div>
+          <p class="mb-1 text-[0.6875rem] font-medium text-text-secondary min-[85rem]:text-center">Số lượng</p>
+          <div class="inline-flex h-8 items-center overflow-hidden rounded-lg border border-primary-200 bg-white min-[85rem]:h-9" data-cart-quantity>
+            <button type="button" class="grid size-8 place-items-center text-primary-900 transition-colors hover:bg-primary-50 disabled:opacity-35 min-[85rem]:size-9" :disabled="props.item.quantity <= 1 || unavailable || props.pending" :aria-label="`Giảm số lượng ${props.item.product.name}`" @click="emit('decrement', props.item.id)"><Minus class="size-3.5" aria-hidden="true" /></button>
+            <output class="grid min-w-7 place-items-center text-body-sm font-semibold text-primary-950 min-[85rem]:min-w-8">{{ props.item.quantity }}</output>
+            <button type="button" class="grid size-8 place-items-center text-primary-900 transition-colors hover:bg-primary-50 disabled:bg-surface-subtle disabled:text-text-muted min-[85rem]:size-9" :disabled="unavailable || props.pending || atInventoryLimit" :aria-label="`Tăng số lượng ${props.item.product.name}`" @click="emit('increment', props.item.id)"><Plus class="size-3.5" aria-hidden="true" /></button>
+          </div>
+        </div>
+
+        <div class="text-right min-[85rem]:text-left">
+          <p class="text-[0.6875rem] font-medium text-text-secondary">Thành tiền</p>
+          <strong class="mt-0.5 block whitespace-nowrap text-body-sm font-bold text-[#bd443d] min-[85rem]:mt-1 min-[85rem]:text-body-md" data-item-subtotal>{{ currencyFormatter.format(props.item.subtotal) }}</strong>
+        </div>
+
+        <button type="button" class="inline-flex min-h-8 items-center gap-1 rounded-lg px-1.5 text-caption font-medium text-[#923b37] transition-colors hover:bg-[#fff3f1] disabled:opacity-50 min-[85rem]:grid min-[85rem]:size-9 min-[85rem]:place-items-center min-[85rem]:p-0" :disabled="props.pending" :aria-label="`Xóa ${props.item.product.name} khỏi giỏ hàng`" @click="emit('remove', props.item.id)"><Trash2 class="size-3.5 min-[85rem]:size-4" aria-hidden="true" /><span class="min-[85rem]:hidden">Xóa</span></button>
       </div>
     </div>
   </article>

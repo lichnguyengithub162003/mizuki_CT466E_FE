@@ -24,7 +24,16 @@ const locationApiMocks = vi.hoisted(() => ({
   listLocationWards: vi.fn(),
 }))
 
+const cartApiMocks = vi.hoisted(() => ({
+  getCustomerCart: vi.fn(),
+  addCartItem: vi.fn(),
+  updateCartItem: vi.fn(),
+  removeCartItem: vi.fn(),
+  selectCartBranch: vi.fn(),
+}))
+
 vi.mock('@/api/locations/locationApi', () => locationApiMocks)
+vi.mock('@/api/cartApi', () => cartApiMocks)
 
 const provinces: readonly LocationProvince[] = [
   { ghn_province_id: 91, name: 'Cần Thơ' },
@@ -158,6 +167,23 @@ beforeEach(() => {
   locationApiMocks.listLocationWards.mockReset().mockImplementation(
     (districtId: number) => Promise.resolve(wardsByDistrict[districtId] ?? []),
   )
+  cartApiMocks.getCustomerCart.mockReset().mockResolvedValue({
+    id: 1,
+    branch: { id: 6, name: 'Mizuki Vĩnh Long', address: 'Vĩnh Long' },
+    totalQuantity: 1,
+    totalAmount: 100000,
+    discountAmount: 0,
+    totalAfterDiscount: 100000,
+    items: [{
+      id: 1,
+      product: { id: 1, name: 'Sản phẩm kiểm thử', slug: 'san-pham-kiem-thu' },
+      variant: { id: 1, name: 'Mặc định', sku: 'SKU-1', effectivePrice: 100000 },
+      quantity: 1,
+      subtotal: 100000,
+      availableQuantity: 5,
+      stockWarning: false,
+    }],
+  })
 })
 
 afterEach(() => {

@@ -22,6 +22,7 @@ const props = withDefaults(
 defineEmits<{
   retry: []
   select: [product: ProductListingProduct]
+  addToCart: [product: ProductListingProduct]
 }>()
 
 const failedImages = ref<ReadonlySet<string>>(new Set())
@@ -199,6 +200,15 @@ function stockLabel(product: ProductListingProduct): string {
           >
             <ShoppingBag class="size-4" aria-hidden="true" />
             {{ product.stockState === 'sold_out' ? 'Bán hết' : 'Xem sản phẩm' }}
+          </button>
+          <button
+            v-if="product.stockState !== 'sold_out' && product.defaultVariantId"
+            type="button"
+            class="motion-interactive mt-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-primary-200 px-3 text-body-sm font-semibold text-primary-900 hover:bg-primary-50"
+            :aria-label="`Thêm ${product.name} vào giỏ hàng`"
+            @click="$emit('addToCart', product)"
+          >
+            Thêm vào giỏ
           </button>
         </div>
       </article>

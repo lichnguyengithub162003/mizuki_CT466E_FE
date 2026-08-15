@@ -232,6 +232,7 @@ export function adaptProductListItem(
     imageUrl: resolveProductImage(
       product.primary_image_url ?? product.primary_image,
     ),
+    defaultVariantId: product.default_variant?.id,
     price,
     originalPrice:
       product.has_discount && originalPrice !== null && originalPrice > price
@@ -497,8 +498,11 @@ export function adaptProductDetail(
 
       return {
         id: String(branch.branch_id),
+        variantId:
+          branch.variant_id === undefined ? undefined : String(branch.variant_id),
         name: branch.branch_name,
         address: "Xem địa chỉ tại bộ chọn chi nhánh.",
+        availableQuantity,
         stockState: detailStockState(availableQuantity),
         stockLabel: detailStockLabel(availableQuantity),
       };

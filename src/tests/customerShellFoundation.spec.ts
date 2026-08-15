@@ -44,8 +44,24 @@ const {
   getProductListingMock: vi.fn(),
 }));
 
+const cartApiMocks = vi.hoisted(() => ({
+  getCustomerCart: vi.fn(),
+  addCartItem: vi.fn(),
+  updateCartItem: vi.fn(),
+  removeCartItem: vi.fn(),
+  selectCartBranch: vi.fn(),
+}));
+
 vi.mock("@/api/branchApi", () => ({
   getBranches: getBranchesMock,
+}));
+
+vi.mock("@/api/cartApi", () => ({
+  getCustomerCart: cartApiMocks.getCustomerCart,
+  addCartItem: cartApiMocks.addCartItem,
+  updateCartItem: cartApiMocks.updateCartItem,
+  removeCartItem: cartApiMocks.removeCartItem,
+  selectCartBranch: cartApiMocks.selectCartBranch,
 }));
 
 vi.mock("@/api/productListingApi", async (importOriginal) => {
@@ -205,6 +221,16 @@ beforeEach(() => {
   getProductBrandsMock.mockResolvedValue([]);
   getProductCategoriesMock.mockResolvedValue(headerCategoryFixtures);
   getProductListingMock.mockResolvedValue(representativeListingResponse);
+  cartApiMocks.getCustomerCart.mockReset();
+  cartApiMocks.selectCartBranch.mockReset();
+  cartApiMocks.getCustomerCart.mockResolvedValue({
+    id: 1,
+    totalQuantity: 0,
+    totalAmount: 0,
+    discountAmount: 0,
+    totalAfterDiscount: 0,
+    items: [],
+  });
   useBranchPreferenceStore(pinia).$patch({
     branches: [],
     selectedBranchId: null,
@@ -889,5 +915,162 @@ describe("customer shell foundation", () => {
     expect(wrapper.get("main").classes()).toEqual(
       expect.arrayContaining(["pb-24", "md:pb-0"]),
     );
+  });
+
+  it("uses distinct server cart lines for both responsive cart badges", async () => {
+    const authStore = useAuthStore(pinia);
+    authStore.$patch({
+      user: {
+        id: 707,
+        name: "Customer",
+        email: "customer@example.com",
+        phone: null,
+        avatar: null,
+        role: "customer",
+        role_label: "Khách hàng",
+        branch_id: null,
+        email_verified_at: null,
+        created_at: "2026-08-14T00:00:00Z",
+      },
+      isInitialized: true,
+    });
+    cartApiMocks.getCustomerCart.mockResolvedValueOnce({
+      id: 1,
+      totalQuantity: 19,
+      totalAmount: 0,
+      discountAmount: 0,
+      totalAfterDiscount: 0,
+      items: [
+        { id: 1, quantity: 1 },
+        { id: 2, quantity: 1 },
+        { id: 3, quantity: 17 },
+      ],
+    });
+    const router = createTestRouter();
+    const wrapper = mount(CustomerLayout, {
+      slots: { default: "<p>Nội dung</p>" },
+      global: { plugins: [pinia, router] },
+    });
+    mountedWrappers.push(wrapper);
+    await flushPromises();
+
+    expect(wrapper.findAll("[data-cart-badge]").map((badge) => badge.text())).toEqual(["3", "3"]);
+  });
+
+  it("synchronizes a changed global branch with the server cart", async () => {
+    useAuthStore(pinia).$patch({
+      user: {
+        id: 708,
+        name: "Customer",
+        email: "customer@example.com",
+        phone: null,
+        avatar: null,
+        role: "customer",
+        role_label: "Khách hàng",
+        branch_id: null,
+        email_verified_at: null,
+        created_at: "2026-08-14T00:00:00Z",
+      },
+      isInitialized: true,
+    });
+    useBranchPreferenceStore(pinia).$patch({
+      branches: backendBranches.filter((branch) => branch.is_active),
+      selectedBranchId: 6,
+      status: "success",
+      error: null,
+    });
+    const cartAtBranchSix = {
+      id: 1,
+      branch: { id: 6, name: "Mizuki Vĩnh Long", address: "Vĩnh Long" },
+      totalQuantity: 1,
+      totalAmount: 100000,
+      discountAmount: 0,
+      totalAfterDiscount: 100000,
+      items: [],
+    };
+    cartApiMocks.getCustomerCart.mockResolvedValueOnce(cartAtBranchSix);
+    cartApiMocks.selectCartBranch.mockResolvedValueOnce({
+      ...cartAtBranchSix,
+      branch: { id: 1, name: "Mizuki Ninh Kiều", address: "Cần Thơ" },
+    });
+    const router = createTestRouter();
+    const wrapper = mount(CustomerLayout, {
+      slots: { default: "<p>Nội dung</p>" },
+      global: { plugins: [pinia, router] },
+    });
+    mountedWrappers.push(wrapper);
+    await flushPromises();
+
+    wrapper.getComponent(CustomerHeader).vm.$emit("selectBranch", {
+      id: 1,
+      name: "Mizuki Ninh Kiều",
+      address: "Cần Thơ",
+      note: "",
+    });
+    await flushPromises();
+
+    expect(cartApiMocks.selectCartBranch).toHaveBeenCalledWith(1)
+  });
+
+  it("synchronizes a newly authenticated customer's unassigned cart with the existing global branch", async () => {
+    const customer = (id: number) => ({
+      id,
+      name: "Customer",
+      email: `customer-${id}@example.com`,
+      phone: null,
+      avatar: null,
+      role: "customer" as const,
+      role_label: "Khách hàng",
+      branch_id: null,
+      email_verified_at: null,
+      created_at: "2026-08-14T00:00:00Z",
+    });
+    const cartAtVinhLong = {
+      id: 1710,
+      branch: { id: 6, name: "Mizuki Vĩnh Long", address: "Vĩnh Long" },
+      totalQuantity: 1,
+      totalAmount: 100000,
+      discountAmount: 0,
+      totalAfterDiscount: 100000,
+      items: [],
+    };
+    const newlyLoadedCartWithoutBranch = {
+      ...cartAtVinhLong,
+      id: 1711,
+      branch: undefined,
+      items: [{ id: 9, quantity: 2 }],
+    };
+    useAuthStore(pinia).$patch({ user: customer(1710), isInitialized: true });
+    useBranchPreferenceStore(pinia).$patch({
+      branches: backendBranches.filter((branch) => branch.is_active),
+      selectedBranchId: 6,
+      status: "success",
+      error: null,
+    });
+    window.localStorage.setItem(BRANCH_PREFERENCE_KEY, "6");
+    cartApiMocks.getCustomerCart
+      .mockResolvedValueOnce(cartAtVinhLong)
+      .mockResolvedValueOnce(newlyLoadedCartWithoutBranch);
+    cartApiMocks.selectCartBranch.mockResolvedValueOnce({
+      ...newlyLoadedCartWithoutBranch,
+      branch: cartAtVinhLong.branch,
+    });
+
+    const router = createTestRouter();
+    const wrapper = mount(CustomerLayout, {
+      slots: { default: "<p>Nội dung</p>" },
+      global: { plugins: [pinia, router] },
+    });
+    mountedWrappers.push(wrapper);
+    await flushPromises();
+
+    useAuthStore(pinia).$patch({ user: customer(1711) });
+    await flushPromises();
+
+    expect(cartApiMocks.getCustomerCart).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => {
+      expect(cartApiMocks.selectCartBranch).toHaveBeenCalledTimes(1);
+    });
+    expect(cartApiMocks.selectCartBranch).toHaveBeenCalledWith(6);
   });
 });
