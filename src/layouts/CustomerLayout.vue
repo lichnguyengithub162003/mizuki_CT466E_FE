@@ -26,14 +26,16 @@ defineSlots<{
   'footer-extra'?: () => unknown
 }>()
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     hideFloatingUtilities?: boolean
     compactCartMobile?: boolean
+    compactFavoritesMobile?: boolean
   }>(),
   {
     hideFloatingUtilities: false,
     compactCartMobile: false,
+    compactFavoritesMobile: false,
   },
 )
 
@@ -156,24 +158,28 @@ watch(
 </script>
 
 <template>
-  <div class="min-h-svh overflow-x-clip bg-background text-foreground" :data-compact-cart-mobile="compactCartMobile || undefined">
-    <CustomerAnnouncementBar :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
+  <div
+    class="min-h-svh overflow-x-clip bg-background text-foreground"
+    :data-compact-cart-mobile="props.compactCartMobile || undefined"
+    :data-compact-favorites-mobile="props.compactFavoritesMobile || undefined"
+  >
+    <CustomerAnnouncementBar :class="(props.compactCartMobile || props.compactFavoritesMobile) && 'max-[84.999rem]:!hidden'" />
     <CustomerHeader
-      :class="compactCartMobile && 'max-[84.999rem]:!hidden'"
+      :class="(props.compactCartMobile || props.compactFavoritesMobile) && 'max-[84.999rem]:!hidden'"
       :selected-branch="selectedBranch"
       :active-key="activeKey"
       :cart-count="cartCount"
       @select-branch="updateBranch"
     />
-    <CustomerMobileHeader :class="compactCartMobile && 'max-[84.999rem]:!hidden'" :selected-branch="selectedBranch" @select-branch="updateBranch" />
+    <CustomerMobileHeader :class="(props.compactCartMobile || props.compactFavoritesMobile) && 'max-[84.999rem]:!hidden'" :selected-branch="selectedBranch" @select-branch="updateBranch" />
     <slot name="header-extra" />
-    <main :class="compactCartMobile ? 'h-svh overflow-hidden pb-0 min-[85rem]:h-auto min-[85rem]:min-h-[50svh] min-[85rem]:overflow-visible' : 'min-h-[50svh] pb-24 md:pb-0'" tabindex="-1">
+    <main :class="props.compactCartMobile ? 'h-svh overflow-hidden pb-0 min-[85rem]:h-auto min-[85rem]:min-h-[50svh] min-[85rem]:overflow-visible' : props.compactFavoritesMobile ? 'min-h-[50svh] pb-0 min-[85rem]:pb-0' : 'min-h-[50svh] pb-24 md:pb-0'" tabindex="-1">
       <slot />
     </main>
-    <CustomerFooter :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
+    <CustomerFooter :class="(props.compactCartMobile || props.compactFavoritesMobile) && 'max-[84.999rem]:!hidden'" />
     <slot name="footer-extra" />
-    <CustomerVoucherFloat v-if="!hideFloatingUtilities" :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
-    <CustomerBackToTop v-if="!hideFloatingUtilities" :class="compactCartMobile && 'max-[84.999rem]:!hidden'" />
-    <CustomerMobileNavigation v-if="!compactCartMobile" :active-key="activeKey" :cart-count="cartCount" />
+    <CustomerVoucherFloat v-if="!props.hideFloatingUtilities" :class="(props.compactCartMobile || props.compactFavoritesMobile) && 'max-[84.999rem]:!hidden'" />
+    <CustomerBackToTop v-if="!props.hideFloatingUtilities" :class="(props.compactCartMobile || props.compactFavoritesMobile) && 'max-[84.999rem]:!hidden'" />
+    <CustomerMobileNavigation v-if="!props.compactCartMobile && !props.compactFavoritesMobile" :active-key="activeKey" :cart-count="cartCount" />
   </div>
 </template>

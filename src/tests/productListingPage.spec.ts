@@ -37,6 +37,11 @@ const cartApiMocks = vi.hoisted(() => ({
   removeCartItem: vi.fn(),
   selectCartBranch: vi.fn(),
 }))
+const favoriteApiMocks = vi.hoisted(() => ({
+  getCustomerFavorites: vi.fn(),
+  addCustomerFavorite: vi.fn(),
+  removeCustomerFavorite: vi.fn(),
+}))
 
 vi.mock('@/api/productListingApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/productListingApi')>()
@@ -48,6 +53,7 @@ vi.mock('@/api/productListingApi', async (importOriginal) => {
   }
 })
 vi.mock('@/api/cartApi', () => cartApiMocks)
+vi.mock('@/api/favoritesApi', () => favoriteApiMocks)
 
 const categoryFixtures: ProductCategoryDto[] = [
   { id: 6, parent_id: null, name: 'Chăm Sóc Da Mặt', slug: 'cham-soc-da-mat', children: [
@@ -102,7 +108,11 @@ const listingResponse: ProductListingResponseDto = {
       sale_price: index === 0 ? 190_000 : null,
       effective_price: 180_000 + index,
     },
-    availability: { available: index !== 23, available_quantity: index === 23 ? 0 : 10 },
+    availability: {
+      available: index !== 23,
+      available_quantity: index === 23 ? 0 : 10,
+      stock_state: index === 23 ? 'sold-out' : 'available',
+    },
   })),
   meta: {
     pagination: { current_page: 1, per_page: 24, total: 2406, last_page: 101 },
@@ -177,6 +187,8 @@ async function mountProductListing(path = '/products'): Promise<MountedProductLi
 }
 
 beforeEach(() => {
+  useAuthStore(pinia).resetForTesting()
+  useAuthStore(pinia).$patch({ user: null, isInitialized: true })
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
   vi.stubGlobal('matchMedia', createMatchMedia(false))
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -209,6 +221,9 @@ beforeEach(() => {
   getProductListingMock.mockReset()
   cartApiMocks.getCustomerCart.mockReset()
   cartApiMocks.addCartItem.mockReset()
+  favoriteApiMocks.getCustomerFavorites.mockReset()
+  favoriteApiMocks.addCustomerFavorite.mockReset()
+  favoriteApiMocks.removeCustomerFavorite.mockReset()
   getProductCategoriesMock.mockReset()
   getProductBrandsMock.mockReset()
   getProductCategoriesMock.mockResolvedValue(categoryFixtures)
@@ -226,6 +241,14 @@ beforeEach(() => {
   }))
   cartApiMocks.getCustomerCart.mockResolvedValue({ id: 1, totalQuantity: 0, totalAmount: 0, discountAmount: 0, totalAfterDiscount: 0, items: [] })
   cartApiMocks.addCartItem.mockResolvedValue({ id: 1, totalQuantity: 1, totalAmount: 180000, discountAmount: 0, totalAfterDiscount: 180000, items: [] })
+  favoriteApiMocks.getCustomerFavorites.mockResolvedValue([])
+  favoriteApiMocks.addCustomerFavorite.mockImplementation((productId: number) => Promise.resolve({
+    productId,
+    name: productListingProducts.find((product) => Number(product.id) === productId)?.name ?? 'Sản phẩm',
+    slug: productListingProducts.find((product) => Number(product.id) === productId)?.slug ?? 'san-pham',
+    minimumPrice: 180000,
+  }))
+  favoriteApiMocks.removeCustomerFavorite.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -589,7 +612,7 @@ describe('customer product listing page', () => {
     ))).toBe(true)
   })
 
-  it('renders honest rating states and toggles a red favorite without navigation', async () => {
+  it('renders honest rating states and redirects a guest favorite action to login', async () => {
     const { wrapper, router } = await mountProductListing()
     const cards = wrapper.findAll('[data-listing-product]')
     expect(cards[0]?.get('[data-product-image-area]').classes()).toContain('aspect-square')
@@ -609,19 +632,39 @@ describe('customer product listing page', () => {
     expect(zeroWrapper.get('[data-rating-stock-row]').find('[data-product-stock]').exists()).toBe(true)
 
     const favorite = cards[0]?.get('button[aria-label^="Yêu thích"]')
+    expect(useAuthStore(pinia).isAuthenticated).toBe(false)
     expect(favorite?.attributes('aria-pressed')).toBe('false')
     expect(favorite?.classes()).toContain('border-white/90')
-    await favorite?.trigger('click')
-    expect(favorite?.attributes('aria-pressed')).toBe('true')
-    expect(favorite?.classes()).toContain('text-red-600')
-    expect(favorite?.classes()).toContain('bg-red-50/95')
-    expect(router.currentRoute.value.path).toBe('/products')
-    await favorite?.trigger('click')
-    expect(favorite?.attributes('aria-pressed')).toBe('false')
-
     await cards[0]?.get('[data-product-image]').trigger('error')
     expect(cards[0]?.get('[data-product-image]').attributes('src')).toMatch(/^data:image\/svg\+xml/)
     expect(wrapper.findAll('img').every((image) => !image.attributes('src')?.includes('placehold.co'))).toBe(true)
+
+    await favorite?.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(ProductListingGrid).emitted('toggle-favorite')).toHaveLength(1)
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/login'))
+    expect(router.currentRoute.value.query.redirect).toBe('/products')
+    expect(favoriteApiMocks.addCustomerFavorite).not.toHaveBeenCalled()
+
+  })
+
+  it('adds and removes a real favorite from Listing using backend-confirmed state', async () => {
+    useAuthStore(pinia).$patch({ user: { id: 71, name: 'Customer', email: 'favorite@example.com', phone: null, avatar: null, role: 'customer', role_label: 'Khách hàng', branch_id: null, email_verified_at: null, created_at: '2026-08-14' }, isInitialized: true })
+    const { wrapper, router } = await mountProductListing()
+    const firstProduct = productListingProducts[0]!
+    const favorite = wrapper.get(`[data-listing-product] button[aria-label="Yêu thích ${firstProduct.name}"]`)
+
+    await favorite.trigger('click')
+    await flushPromises()
+    expect(favoriteApiMocks.addCustomerFavorite.mock.calls[0]?.[0]).toBe(Number(firstProduct.id))
+    expect(wrapper.get(`[data-listing-product] button[aria-pressed="true"]`).classes()).toContain('text-red-600')
+    expect(wrapper.get(`[data-suggested-product] button[aria-pressed="true"]`).attributes('aria-label')).toContain(firstProduct.name)
+    expect(router.currentRoute.value.path).toBe('/products')
+
+    await wrapper.get(`[data-listing-product] button[aria-label="Bỏ ${firstProduct.name} khỏi yêu thích"]`).trigger('click')
+    await flushPromises()
+    expect(favoriteApiMocks.removeCustomerFavorite.mock.calls[0]?.[0]).toBe(Number(firstProduct.id))
+    expect(wrapper.get(`[data-listing-product] button[aria-label="Yêu thích ${firstProduct.name}"]`).attributes('aria-pressed')).toBe('false')
   })
 
   it('restores valid route query state and sends the selected branch ID', async () => {

@@ -135,7 +135,7 @@ const representativeListingResponse = {
       rating: 4.8,
       review_count: 12,
       default_variant: null,
-      availability: { available: true, available_quantity: 8 },
+      availability: { available: true, available_quantity: 8, stock_state: 'available' },
     },
   ],
   meta: {

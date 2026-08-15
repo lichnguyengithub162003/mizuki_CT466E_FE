@@ -10,14 +10,18 @@ import { cn } from '@/utils/cn'
 const props = defineProps<{
   products: readonly ProductListingProduct[]
   state?: ProductContentState
+  favoriteIds?: ReadonlySet<string>
+  favoritePending?: boolean
 }>()
 
-defineEmits<{ retry: [] }>()
+defineEmits<{
+  retry: []
+  'toggle-favorite': [product: ProductListingProduct]
+}>()
 
 const carousel = ref<HTMLElement>()
 const activeIndex = ref(0)
 const failedImages = ref<ReadonlySet<string>>(new Set())
-const favoriteIds = ref<ReadonlySet<string>>(new Set())
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN', {
   style: 'currency',
@@ -46,13 +50,6 @@ function productImage(product: ProductListingProduct): string {
 
 function handleImageError(productId: string): void {
   failedImages.value = new Set([...failedImages.value, productId])
-}
-
-function toggleFavorite(productId: string): void {
-  const next = new Set(favoriteIds.value)
-  if (next.has(productId)) next.delete(productId)
-  else next.add(productId)
-  favoriteIds.value = next
 }
 
 function prefersReducedMotion(): boolean {
@@ -172,13 +169,14 @@ function handleKeyboard(event: KeyboardEvent): void {
               type="button"
               :class="cn(
                 'motion-interactive absolute right-2.5 top-2.5 grid size-9 place-items-center rounded-full bg-white/90 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                favoriteIds.has(product.id) ? 'text-red-600' : 'text-primary-800',
+                props.favoriteIds?.has(product.id) ? 'text-red-600' : 'text-primary-800',
               )"
-              :aria-label="`Yêu thích ${product.name}`"
-              :aria-pressed="favoriteIds.has(product.id)"
-              @click.stop="toggleFavorite(product.id)"
+              :aria-label="props.favoriteIds?.has(product.id) ? `Bỏ ${product.name} khỏi yêu thích` : `Yêu thích ${product.name}`"
+              :aria-pressed="props.favoriteIds?.has(product.id) ?? false"
+              :disabled="props.favoritePending"
+              @click.stop="$emit('toggle-favorite', product)"
             >
-              <Heart :class="cn('size-4', favoriteIds.has(product.id) && 'fill-current')" aria-hidden="true" />
+              <Heart :class="cn('size-4', props.favoriteIds?.has(product.id) && 'fill-current')" aria-hidden="true" />
             </button>
           </div>
 

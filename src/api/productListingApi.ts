@@ -31,6 +31,7 @@ export interface ProductListingVariantDto {
 export interface ProductListingAvailabilityDto {
   available: boolean;
   available_quantity: number;
+  stock_state: 'available' | 'low-stock' | 'sold-out' | 'discontinued';
 }
 
 export interface ProductListingItemDto {

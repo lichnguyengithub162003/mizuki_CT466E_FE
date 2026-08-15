@@ -26,6 +26,11 @@ const cartMocks = vi.hoisted(() => ({
   removeCartItem: vi.fn(),
   selectCartBranch: vi.fn(),
 }))
+const favoriteMocks = vi.hoisted(() => ({
+  getCustomerFavorites: vi.fn(),
+  addCustomerFavorite: vi.fn(),
+  removeCustomerFavorite: vi.fn(),
+}))
 vi.mock('@/api/productListingApi', () => ({
   getProductDetail: mocks.getProductDetail,
   getProductListing: mocks.getProductListing,
@@ -34,6 +39,7 @@ vi.mock('@/api/productListingApi', () => ({
   unfollowBrand: mocks.unfollowBrand,
 }))
 vi.mock('@/api/cartApi', () => cartMocks)
+vi.mock('@/api/favoritesApi', () => favoriteMocks)
 
 const slug = 'thuc-pham-bao-ve-suc-khoe-dhc-vitamin-b-mix-242388'
 const detail: ProductDetailSourceResponseDto = {
@@ -73,7 +79,7 @@ const listing: ProductListingResponseDto = {
     rating: 4.5,
     review_count: 2,
     default_variant: null,
-    availability: { available: true, available_quantity: 10 },
+    availability: { available: true, available_quantity: 10, stock_state: 'available' },
   }],
   meta: { pagination: { current_page: 1, per_page: 8, total: 1, last_page: 1 } },
 }
@@ -126,9 +132,13 @@ beforeEach(() => {
   useBranchPreferenceStore(pinia).$patch({ branches: [{ id: 6, code: 'MZ-VL', name: 'Mizuki Vĩnh Long', address: '', phone: null, email: null, is_active: true, opening_hours: [] }], selectedBranchId: 6, status: 'success', error: null })
   mocks.getProductDetail.mockReset(); mocks.getProductListing.mockReset(); mocks.getProductReviews.mockReset(); mocks.followBrand.mockReset(); mocks.unfollowBrand.mockReset()
   cartMocks.getCustomerCart.mockReset(); cartMocks.addCartItem.mockReset(); cartMocks.updateCartItem.mockReset(); cartMocks.removeCartItem.mockReset(); cartMocks.selectCartBranch.mockReset()
+  favoriteMocks.getCustomerFavorites.mockReset(); favoriteMocks.addCustomerFavorite.mockReset(); favoriteMocks.removeCustomerFavorite.mockReset()
   mocks.getProductDetail.mockResolvedValue(detail); mocks.getProductListing.mockResolvedValue(listing)
   mocks.getProductReviews.mockResolvedValue({ success: true, message: 'OK', data: { summary: { average_rating: 0, total_reviews: 0, rating_distribution: {} }, reviews: [] }, meta: { pagination: { current_page: 1, per_page: 3, total: 0, last_page: 1 } } })
   cartMocks.getCustomerCart.mockResolvedValue({ id: 1, totalQuantity: 0, totalAmount: 0, discountAmount: 0, totalAfterDiscount: 0, items: [] })
+  favoriteMocks.getCustomerFavorites.mockResolvedValue([])
+  favoriteMocks.addCustomerFavorite.mockResolvedValue({ productId: 2406, name: detail.data.product.name, slug, minimumPrice: 90000 })
+  favoriteMocks.removeCustomerFavorite.mockResolvedValue(undefined)
   mocks.followBrand.mockResolvedValue({ follower_count: 803 }); mocks.unfollowBrand.mockResolvedValue({ follower_count: 802 })
 })
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()); document.body.innerHTML = ''; window.localStorage.removeItem('mizuki:selected-branch-id'); vi.restoreAllMocks() })
@@ -141,6 +151,35 @@ describe('customer product detail page', () => {
     expect(wrapper.get('[data-product-detail-page]').attributes('data-content-state')).toBe('success')
     expect(wrapper.get('h1').text()).toBe(detail.data.product.name)
     expect(wrapper.get('[data-detail-main-image]').attributes('src')).toContain('/storage/catalog/products/')
+  })
+
+  it('adds and removes the current product through the real favorites contract', async () => {
+    authenticateCustomer(701)
+    const { wrapper } = await mountDetail()
+    const addButton = wrapper.get('button[aria-label="Thêm vào yêu thích"]')
+
+    await addButton.trigger('click')
+    await flushPromises()
+    expect(favoriteMocks.addCustomerFavorite.mock.calls[0]?.[0]).toBe(2406)
+    expect(wrapper.get('button[aria-label="Bỏ khỏi yêu thích"]').attributes('aria-pressed')).toBe('true')
+
+    await wrapper.get('button[aria-label="Bỏ khỏi yêu thích"]').trigger('click')
+    await flushPromises()
+    expect(favoriteMocks.removeCustomerFavorite.mock.calls[0]?.[0]).toBe(2406)
+    expect(wrapper.get('button[aria-label="Thêm vào yêu thích"]').attributes('aria-pressed')).toBe('false')
+  })
+
+  it('keeps the confirmed favorite state when the Detail remove request fails', async () => {
+    authenticateCustomer(702)
+    favoriteMocks.getCustomerFavorites.mockResolvedValueOnce([{ productId: 2406, name: detail.data.product.name, slug, minimumPrice: 90000 }])
+    favoriteMocks.removeCustomerFavorite.mockRejectedValueOnce(new Error('Không thể bỏ yêu thích lúc này'))
+    const { wrapper } = await mountDetail()
+
+    await wrapper.get('button[aria-label="Bỏ khỏi yêu thích"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('button[aria-label="Bỏ khỏi yêu thích"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Không thể bỏ yêu thích lúc này')
   })
 
   it('renders backend variant, selected-branch stock, and text-only rich content', async () => {

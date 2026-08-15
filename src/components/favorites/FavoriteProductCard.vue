@@ -1,147 +1,213 @@
 <script setup lang="ts">
-import { HeartOff, PackageOpen, ShoppingCart, Star } from '@lucide/vue'
-import { computed } from 'vue'
-import { RouterLink } from 'vue-router'
-import { ROUTE_NAMES } from '@/constants/routes'
-import type { FavoriteProduct } from '@/types/customer'
-import { cn } from '@/utils/cn'
+import { Heart, PackageOpen } from "@lucide/vue";
+import { computed, ref } from "vue";
+import { RouterLink } from "vue-router";
+import { ROUTE_NAMES } from "@/constants/routes";
+import type { CustomerFavorite } from "@/types/favorites";
 
-const props = defineProps<{
-  item: FavoriteProduct
-}>()
+const props = withDefaults(
+  defineProps<{
+    item: CustomerFavorite;
+    pending?: boolean;
+    editing?: boolean;
+    selected?: boolean;
+  }>(),
+  {
+    pending: false,
+    editing: false,
+    selected: false,
+  },
+);
 
-const emit = defineEmits<{
-  remove: [id: string]
-  addToCart: [id: string]
-}>()
+defineEmits<{
+  remove: [productId: number];
+  toggleSelection: [productId: number];
+}>();
 
-const currencyFormatter = new Intl.NumberFormat('vi-VN', {
-  style: 'currency',
-  currency: 'VND',
-})
+const imageFailed = ref(false);
+const currencyFormatter = new Intl.NumberFormat("vi-VN", {
+  style: "currency",
+  currency: "VND",
+});
 
-const canAddToCart = computed(
-  () => props.item.stockState === 'available' || props.item.stockState === 'low-stock',
-)
+const showOriginalPrice = computed(
+  () =>
+    props.item.originalPrice !== null &&
+    props.item.originalPrice > props.item.minimumPrice,
+);
 
-const stockLabel = computed(() => {
-  const labels: Record<FavoriteProduct['stockState'], string> = {
-    available: 'Còn hàng',
-    'low-stock': 'Sắp hết hàng',
-    'sold-out': 'Đã bán hết',
-    discontinued: 'Ngừng kinh doanh',
-  }
-  return labels[props.item.stockState]
-})
+const hasUnavailableOverlay = computed(
+  () =>
+    props.item.stockState === "sold-out" ||
+    props.item.stockState === "discontinued",
+);
 
-const toneClasses: Record<FavoriteProduct['product']['tone'], string> = {
-  mint: 'bg-[#e3f1eb]',
-  rose: 'bg-[#f3e5e2]',
-  sand: 'bg-[#f2eadc]',
-  sky: 'bg-[#e4eef2]',
-  lilac: 'bg-[#ebe8f5]',
+const stockLabels: Record<CustomerFavorite["stockState"], string> = {
+  available: "Còn hàng",
+  "low-stock": "Sắp hết",
+  "sold-out": "Hết hàng",
+  discontinued: "Ngưng bán",
+};
+
+const stockClasses: Record<CustomerFavorite["stockState"], string> = {
+  available: "bg-primary-50 text-primary-700",
+  "low-stock": "bg-[#fff6df] text-[#8a6116]",
+  "sold-out": "bg-[#fff0ee] text-[#a34640]",
+  discontinued: "bg-[#f1f3f2] text-[#69716e]",
+};
+
+const imageOverlayClasses: Record<"sold-out" | "discontinued", string> = {
+  "sold-out": "bg-primary-950/24",
+  discontinued: "bg-[#59635f]/20",
+};
+
+const imageOverlayPillClasses: Record<"sold-out" | "discontinued", string> = {
+  "sold-out": "text-primary-950",
+  discontinued: "text-[#59635f]",
+};
+
+function unavailableClass(
+  classes: Record<"sold-out" | "discontinued", string>,
+): string {
+  return props.item.stockState === "sold-out" ||
+    props.item.stockState === "discontinued"
+    ? classes[props.item.stockState]
+    : "";
 }
 </script>
 
 <template>
   <article
-    class="group flex min-w-0 flex-col overflow-hidden rounded-3xl border border-primary-100 bg-white shadow-xs"
-    :aria-labelledby="`favorite-name-${props.item.id}`"
+    class="group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-sm"
+    :aria-labelledby="`favorite-name-${props.item.productId}`"
     data-favorite-item
     :data-stock-state="props.item.stockState"
   >
-    <div :class="cn('relative aspect-[4/3] p-4', toneClasses[props.item.product.tone])">
-      <div class="grid size-full place-items-center rounded-2xl border border-white/70 bg-white/45 text-primary-700">
-        <PackageOpen class="size-10 opacity-75" aria-hidden="true" />
+    <div
+      class="relative aspect-[3/2] overflow-hidden bg-[#edf6f1] p-2.5 sm:p-3"
+      data-favorite-image-area
+    >
+      <img
+        v-if="props.item.imageUrl && !imageFailed"
+        :src="props.item.imageUrl"
+        :alt="props.item.name"
+        :class="hasUnavailableOverlay ? 'opacity-75 saturate-[0.65]' : ''"
+        class="size-full rounded-xl bg-white object-contain transition-[transform,filter,opacity] duration-300 group-hover:scale-[1.025]"
+        loading="lazy"
+        data-favorite-image-visual
+        @error="imageFailed = true"
+      />
+      <div
+        v-else
+        :class="hasUnavailableOverlay ? 'opacity-75 saturate-[0.65]' : ''"
+        class="grid size-full place-items-center rounded-xl bg-white text-primary-700 transition-[filter,opacity] duration-300"
+        data-favorite-image-visual
+      >
+        <PackageOpen class="size-7 opacity-70" aria-hidden="true" />
       </div>
-      <span
-        v-if="props.item.product.discountPercent"
-        class="absolute left-3 top-3 rounded-full bg-[#c8423a] px-2.5 py-1 text-caption font-semibold text-white"
+
+      <div
+        v-if="hasUnavailableOverlay"
+        :class="unavailableClass(imageOverlayClasses)"
+        class="pointer-events-none absolute inset-0 z-10 grid place-items-center"
+        data-favorite-stock-overlay
+        aria-hidden="true"
       >
-        -{{ props.item.product.discountPercent }}%
-      </span>
+        <span
+          :class="unavailableClass(imageOverlayPillClasses)"
+          class="rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-xs sm:text-sm"
+          data-favorite-stock-overlay-pill
+        >
+          {{ stockLabels[props.item.stockState] }}
+        </span>
+      </div>
+
+      <label
+        v-if="props.editing"
+        class="absolute left-2.5 top-2.5 z-20 grid size-9 cursor-pointer place-items-center rounded-full border border-primary-200 bg-white shadow-sm"
+        :aria-label="`Chọn ${props.item.name}`"
+      >
+        <input
+          type="checkbox"
+          class="size-4 accent-primary"
+          :checked="props.selected"
+          :disabled="props.pending"
+          @change="$emit('toggleSelection', props.item.productId)"
+        />
+      </label>
+
       <button
+        v-else
         type="button"
-        class="motion-interactive absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-white/95 text-[#b83d3a] shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        :aria-label="`Bỏ ${props.item.product.name} khỏi yêu thích`"
-        @click="emit('remove', props.item.id)"
+        class="motion-interactive absolute right-2.5 top-2.5 z-20 grid size-10 place-items-center rounded-full border border-[#f1d3d0] bg-white text-[#c8423a] shadow-sm hover:border-[#e6b8b3] hover:bg-[#fff7f6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60"
+        :disabled="props.pending"
+        :aria-label="`Bỏ ${props.item.name} khỏi yêu thích`"
+        aria-pressed="true"
+        @click="$emit('remove', props.item.productId)"
       >
-        <HeartOff class="size-4.5" aria-hidden="true" />
+        <Heart class="size-5 fill-current" aria-hidden="true" />
       </button>
     </div>
 
-    <div class="flex flex-1 flex-col p-4">
-      <p class="text-caption font-semibold uppercase tracking-[0.1em] text-primary-700">
-        {{ props.item.product.brand }}
-      </p>
+    <div class="flex flex-1 flex-col px-1.5 py-2.5 sm:p-3.5">
+      <div class="mb-1.5 flex min-h-[1.125rem] min-w-0 items-center justify-between gap-2">
+        <p
+          v-if="props.item.brand"
+          class="truncate text-[0.6875rem] font-semibold uppercase tracking-[0.06em] text-primary-700 sm:text-xs"
+          data-favorite-brand
+        >
+          {{ props.item.brand.name }}
+        </p>
+        <span
+          :class="[
+            stockClasses[props.item.stockState],
+            hasUnavailableOverlay ? 'sr-only' : '',
+          ]"
+          class="ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-[0.625rem] font-semibold sm:text-[0.6875rem]"
+          data-favorite-stock-label
+        >
+          {{ stockLabels[props.item.stockState] }}
+        </span>
+      </div>
+
       <h2
-        :id="`favorite-name-${props.item.id}`"
-        class="mt-1 line-clamp-2 min-h-12 text-body-md font-semibold leading-6 text-primary-950"
+        :id="`favorite-name-${props.item.productId}`"
+        class="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-primary-950"
       >
-        {{ props.item.product.name }}
+        {{ props.item.name }}
       </h2>
 
-      <div class="mt-3 flex flex-wrap items-baseline gap-x-2">
-        <strong class="text-body-lg font-bold text-[#c8423a]">
-          {{ currencyFormatter.format(props.item.product.price) }}
+      <div class="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+        <span class="text-xs text-text-muted">Giá từ</span>
+        <strong
+          class="text-[0.9375rem] font-bold leading-5 text-[#c8423a] sm:text-base"
+        >
+          {{ currencyFormatter.format(props.item.minimumPrice) }}
         </strong>
         <span
-          v-if="props.item.product.originalPrice"
-          class="text-caption text-text-muted line-through"
+          v-if="showOriginalPrice"
+          class="text-xs text-text-muted line-through decoration-text-muted/70"
+          data-favorite-original-price
         >
-          {{ currencyFormatter.format(props.item.product.originalPrice) }}
+          {{ currencyFormatter.format(props.item.originalPrice!) }}
         </span>
       </div>
 
-      <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-text-secondary">
-        <span class="inline-flex items-center gap-1">
-          <Star class="size-3.5 fill-[#e3aa32] text-[#e3aa32]" aria-hidden="true" />
-          {{ props.item.product.rating?.toFixed(1) ?? '—' }}
-        </span>
-        <span>Đã bán {{ props.item.product.soldCount ?? 0 }}</span>
-      </div>
-
-      <div class="mt-3 border-t border-primary-100 pt-3">
-        <p
-          :class="cn(
-            'text-body-sm font-semibold',
-            canAddToCart ? 'text-primary-800' : 'text-[#9b3e3a]',
-          )"
-          data-favorite-stock
-        >
-          {{ stockLabel }}
-        </p>
-        <p class="mt-1 text-caption leading-5 text-text-secondary">
-          {{ props.item.branchAvailability.label }}
-        </p>
-      </div>
-
-      <div class="mt-auto grid gap-2 pt-4 sm:grid-cols-2">
-        <RouterLink
-          :to="{ name: ROUTE_NAMES.productDetail, params: { slug: props.item.product.slug } }"
-          class="motion-interactive inline-flex min-h-11 items-center justify-center rounded-xl border border-primary-200 px-3 text-body-sm font-semibold text-primary-900 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          Xem chi tiết
-        </RouterLink>
-        <button
-          type="button"
-          class="motion-interactive inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-body-sm font-semibold text-primary-foreground hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-primary-100 disabled:text-text-muted"
-          :disabled="!canAddToCart"
-          :aria-label="`Thêm ${props.item.product.name} vào giỏ hàng`"
-          @click="emit('addToCart', props.item.id)"
-        >
-          <ShoppingCart class="size-4" aria-hidden="true" />
-          Thêm vào giỏ
-        </button>
-      </div>
-
-      <RouterLink
-        v-if="!canAddToCart"
-        :to="{ name: ROUTE_NAMES.products, query: { similarTo: props.item.product.id } }"
-        class="motion-interactive mt-2 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary-50 px-3 text-body-sm font-semibold text-primary-800 hover:bg-primary-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      <div
+        class="mt-auto pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)] sm:gap-2"
       >
-        Tìm sản phẩm tương tự
-      </RouterLink>
+        <RouterLink
+          :to="{
+            name: ROUTE_NAMES.productDetail,
+            params: { slug: props.item.slug },
+          }"
+          class="motion-interactive mt-auto inline-flex min-h-9 w-full items-center justify-center whitespace-nowrap rounded-lg bg-primary-600 px-3 text-caption font-semibold text-white hover:bg-primary-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          :aria-label="`Chi tiết ${props.item.name}`"
+          data-favorite-detail-link
+        >
+          Chi tiết
+        </RouterLink>
+      </div>
     </div>
   </article>
 </template>

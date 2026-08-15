@@ -244,9 +244,10 @@ export function adaptProductListItem(
         : undefined,
     rating: finiteNumber(product.rating) ?? 0,
     reviewCount: Math.max(0, product.review_count),
-    stockState: !product.availability.available
+    stockState: product.availability.stock_state === "sold-out"
+      || product.availability.stock_state === "discontinued"
       ? "sold_out"
-      : product.availability.available_quantity <= 5
+      : product.availability.stock_state === "low-stock"
         ? "low"
         : "available",
   };

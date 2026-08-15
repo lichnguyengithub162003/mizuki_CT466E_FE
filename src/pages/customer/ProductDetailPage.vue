@@ -38,6 +38,11 @@ import {
 import { pinia } from "@/stores/pinia";
 import { useBranchPreferenceStore } from "@/stores/branchPreference";
 import { useAddCartItemMutation, useCustomerCartQuery } from "@/queries/cart";
+import {
+  useAddFavoriteMutation,
+  useCustomerFavoritesQuery,
+  useRemoveFavoriteMutation,
+} from "@/queries/favorites";
 import { useAuthStore } from "@/stores/auth";
 import type {
   ProductContentState,
@@ -198,22 +203,34 @@ const router = useRouter();
 const branchStore = useBranchPreferenceStore(pinia);
 const authStore = useAuthStore(pinia);
 const { toast } = useToast();
+const favoriteUserId = computed(() =>
+  authStore.role === "customer" ? (authStore.user?.id ?? null) : null,
+);
 const addCartMutation = useAddCartItemMutation(
   computed(() => authStore.user?.id ?? null),
 );
 const cartQuery = useCustomerCartQuery(
   computed(() => authStore.user?.id ?? null),
 );
+const favoritesQuery = useCustomerFavoritesQuery(
+  favoriteUserId,
+);
+const addFavoriteMutation = useAddFavoriteMutation(
+  favoriteUserId,
+);
+const removeFavoriteMutation = useRemoveFavoriteMutation(
+  favoriteUserId,
+);
 branchStore.restore();
 const retryState = ref<ProductDetailDemoState | null>(null);
 const quantity = ref(1);
 const selectedVariants = ref<Record<string, string>>({});
-const isFavorite = ref(false);
 const isFollowingBrand = ref(false);
 const isBrandFollowPending = ref(false);
 const brandFollowerCount = ref<number | undefined>();
 const brandFollowFeedback = ref("");
 const purchaseFeedback = ref("");
+const favoriteFeedback = ref("");
 const activeSection = ref<(typeof sectionLinks)[number]["id"]>(
   sectionLinks[0].id,
 );
@@ -302,6 +319,13 @@ const slug = computed(() =>
 );
 const detailQuery = useProductDetailQuery(slug);
 const product = computed(() => detailQuery.data.value);
+const favoriteIds = computed<ReadonlySet<string>>(
+  () => new Set((favoritesQuery.data.value ?? []).map((favorite) => String(favorite.productId))),
+);
+const isFavorite = computed(() => Boolean(product.value && favoriteIds.value.has(product.value.id)));
+const favoritePending = computed(
+  () => addFavoriteMutation.isPending.value || removeFavoriteMutation.isPending.value,
+);
 
 const reviewFilters = computed(() => ({
   rating:
@@ -672,6 +696,43 @@ async function toggleBrandFollow(): Promise<void> {
         : "Không thể cập nhật trạng thái theo dõi. Vui lòng thử lại.";
   } finally {
     isBrandFollowPending.value = false;
+  }
+}
+
+async function toggleProductFavorite(targetProduct?: { readonly id: string }): Promise<void> {
+  const currentProduct = targetProduct ?? product.value;
+  if (!currentProduct || favoritePending.value) return;
+
+  if (!authStore.isAuthenticated || authStore.role !== "customer") {
+    await router.push({
+      name: ROUTE_NAMES.login,
+      query: { redirect: route.fullPath },
+    });
+    return;
+  }
+
+  const productId = Number(currentProduct.id);
+  if (!Number.isSafeInteger(productId) || productId <= 0) return;
+
+  favoriteFeedback.value = "";
+  const removing = favoriteIds.value.has(currentProduct.id);
+  try {
+    if (removing) await removeFavoriteMutation.mutateAsync(productId);
+    else await addFavoriteMutation.mutateAsync(productId);
+    toast({
+      title: removing
+        ? "Đã bỏ sản phẩm khỏi yêu thích."
+        : "Đã thêm sản phẩm vào yêu thích.",
+      variant: "success",
+    });
+  } catch (error: unknown) {
+    favoriteFeedback.value =
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof error.message === "string"
+        ? error.message
+        : "Không thể cập nhật danh sách yêu thích.";
   }
 }
 
@@ -1232,6 +1293,7 @@ onBeforeUnmount(() => {
               <BaseButton
                 variant="outline"
                 size="icon"
+                :disabled="favoritePending"
                 :class="
                   isFavorite
                     ? 'border-[#e5b3b0] bg-[#fff4f3] text-[#c43d38] hover:bg-[#fee9e7]'
@@ -1241,7 +1303,7 @@ onBeforeUnmount(() => {
                   isFavorite ? 'Bỏ khỏi yêu thích' : 'Thêm vào yêu thích'
                 "
                 :aria-pressed="isFavorite"
-                @click="isFavorite = !isFavorite"
+                @click="toggleProductFavorite()"
               >
                 <Heart
                   :class="[
@@ -1258,6 +1320,13 @@ onBeforeUnmount(() => {
               role="status"
             >
               {{ purchaseFeedback }}
+            </p>
+            <p
+              v-if="favoriteFeedback"
+              class="mt-3 text-body-sm font-medium text-[#923b37]"
+              role="alert"
+            >
+              {{ favoriteFeedback }}
             </p>
           </section>
         </div>
@@ -2400,6 +2469,9 @@ onBeforeUnmount(() => {
           <ProductSuggestions
             v-if="relatedProducts.length"
             :products="relatedProducts"
+            :favorite-ids="favoriteIds"
+            :favorite-pending="favoritePending"
+            @toggle-favorite="toggleProductFavorite"
           />
         </div>
       </template>

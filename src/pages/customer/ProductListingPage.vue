@@ -22,6 +22,11 @@ import { pinia } from '@/stores/pinia'
 import { useBranchPreferenceStore } from '@/stores/branchPreference'
 import { useAuthStore } from '@/stores/auth'
 import { useAddCartItemMutation } from '@/queries/cart'
+import {
+  useAddFavoriteMutation,
+  useCustomerFavoritesQuery,
+  useRemoveFavoriteMutation,
+} from '@/queries/favorites'
 import type {
   ProductBackendSort,
   ProductContentState,
@@ -77,8 +82,13 @@ const router = useRouter()
 const branchStore = useBranchPreferenceStore(pinia)
 const authStore = useAuthStore(pinia)
 const { toast } = useToast()
+const favoriteUserId = computed(() => authStore.role === 'customer' ? authStore.user?.id ?? null : null)
 const addCartMutation = useAddCartItemMutation(computed(() => authStore.user?.id ?? null))
+const favoritesQuery = useCustomerFavoritesQuery(favoriteUserId)
+const addFavoriteMutation = useAddFavoriteMutation(favoriteUserId)
+const removeFavoriteMutation = useRemoveFavoriteMutation(favoriteUserId)
 const cartFeedback = ref('')
+const favoriteFeedback = ref('')
 const mobileFilterOpen = ref(false)
 
 branchStore.restore()
@@ -148,6 +158,12 @@ const suggestionRequest = computed<ProductListingRequest>(() => ({
 const suggestionsQuery = useProductListingQuery(suggestionRequest, listingReady)
 
 const products = computed(() => listingQuery.data.value?.products ?? [])
+const favoriteIds = computed<ReadonlySet<string>>(
+  () => new Set((favoritesQuery.data.value ?? []).map((favorite) => String(favorite.productId))),
+)
+const favoritePending = computed(
+  () => addFavoriteMutation.isPending.value || removeFavoriteMutation.isPending.value,
+)
 const pagination = computed(() => listingQuery.data.value?.pagination ?? {
   currentPage: currentPage.value,
   perPage: PER_PAGE,
@@ -361,6 +377,31 @@ async function addListingProductToCart(product: ProductListingProduct): Promise<
   }
 }
 
+async function toggleListingFavorite(product: ProductListingProduct): Promise<void> {
+  if (!authStore.isAuthenticated || authStore.role !== 'customer') {
+    await router.push({ name: ROUTE_NAMES.login, query: { redirect: route.fullPath } })
+    return
+  }
+
+  const productId = Number(product.id)
+  if (!Number.isSafeInteger(productId) || productId <= 0 || favoritePending.value) return
+
+  favoriteFeedback.value = ''
+  const removing = favoriteIds.value.has(product.id)
+  try {
+    if (removing) await removeFavoriteMutation.mutateAsync(productId)
+    else await addFavoriteMutation.mutateAsync(productId)
+    toast({
+      title: removing ? 'Đã bỏ sản phẩm khỏi yêu thích.' : 'Đã thêm sản phẩm vào yêu thích.',
+      variant: 'success',
+    })
+  } catch (error: unknown) {
+    favoriteFeedback.value = typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
+      ? error.message
+      : 'Không thể cập nhật danh sách yêu thích.'
+  }
+}
+
 watch(
   () => listingQuery.data.value?.pagination.lastPage,
   (lastPage) => {
@@ -464,11 +505,15 @@ watch(
               <ProductListingGrid
                 :products="products"
                 :state="contentState"
+                :favorite-ids="favoriteIds"
+                :favorite-pending="favoritePending"
                 @retry="listingQuery.refetch()"
                 @select="openProductDetail"
                 @add-to-cart="addListingProductToCart"
+                @toggle-favorite="toggleListingFavorite"
               />
               <p v-if="cartFeedback" class="mt-3 text-body-sm text-primary-800" role="status">{{ cartFeedback }}</p>
+              <p v-if="favoriteFeedback" class="mt-3 text-body-sm text-[#923b37]" role="alert">{{ favoriteFeedback }}</p>
               <div
                 v-if="listingQuery.isFetching.value && products.length > 0"
                 class="pointer-events-none absolute inset-0 rounded-2xl bg-background/35 backdrop-blur-[1px]"
@@ -524,7 +569,10 @@ watch(
         class="my-12"
         :products="suggestions"
         :state="suggestionsState"
+        :favorite-ids="favoriteIds"
+        :favorite-pending="favoritePending"
         @retry="suggestionsQuery.refetch()"
+        @toggle-favorite="toggleListingFavorite"
       />
     </div>
 

@@ -51,7 +51,7 @@ const baseProduct: ProductListingItemDto = {
     sale_price: 129_000,
     effective_price: 129_000,
   },
-  availability: { available: true, available_quantity: 8 },
+  availability: { available: true, available_quantity: 8, stock_state: 'available' },
 }
 
 beforeEach(() => {
@@ -166,7 +166,7 @@ describe('product listing API and adapter', () => {
   it('uses backend availability without invented sales or badges', () => {
     const unavailable = adaptProductListItem({
       ...baseProduct,
-      availability: { available: false, available_quantity: 0 },
+      availability: { available: false, available_quantity: 0, stock_state: 'sold-out' },
     })
 
     expect(unavailable.stockState).toBe('sold_out')
@@ -174,7 +174,7 @@ describe('product listing API and adapter', () => {
     expect(unavailable.badge).toBeUndefined()
     expect(adaptProductListItem({
       ...baseProduct,
-      availability: { available: true, available_quantity: 3 },
+      availability: { available: true, available_quantity: 3, stock_state: 'low-stock' },
     }).stockState).toBe('low')
   })
 
