@@ -10,11 +10,13 @@ const props = withDefaults(
     label: string
     description?: string
     disabled?: boolean
+    reserveErrorSpace?: boolean
     class?: string
   }>(),
   {
     description: undefined,
     disabled: false,
+    reserveErrorSpace: false,
     class: undefined,
   },
 )
@@ -31,6 +33,7 @@ const inputId = computed(() => createFormFieldId(props.name))
     :description="props.description"
     :error="errorMessage"
     :disabled="props.disabled"
+    :reserve-error-space="props.reserveErrorSpace"
     :class="props.class"
     @update:model-value="handleChange($event === true)"
   />

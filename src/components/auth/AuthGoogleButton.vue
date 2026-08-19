@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import BaseButton from "@/components/common/BaseButton.vue";
+import AuthSecondaryButton from '@/components/auth/AuthSecondaryButton.vue'
 
 withDefaults(
   defineProps<{
@@ -12,20 +12,14 @@ withDefaults(
 );
 
 const emit = defineEmits<{
-  click: [];
-}>();
+  click: []
+}>()
 
-const GOOGLE_LOGO_SRC = "/images/auth/google-logo.svg";
+const GOOGLE_LOGO_SRC = '/images/auth/google-logo.svg'
 </script>
 
 <template>
-  <BaseButton
-    type="button"
-    variant="outline"
-    class="h-12 w-full rounded-xl border-border bg-white text-foreground shadow-xs"
-    :disabled="loading"
-    @click="emit('click')"
-  >
+  <AuthSecondaryButton :loading="loading" @click="emit('click')">
     <template #icon>
       <img
         :src="GOOGLE_LOGO_SRC"
@@ -35,6 +29,6 @@ const GOOGLE_LOGO_SRC = "/images/auth/google-logo.svg";
       />
     </template>
 
-    {{ loading ? "Đang chuyển hướng..." : label }}
-  </BaseButton>
+    {{ loading ? 'Đang chuyển hướng...' : label }}
+  </AuthSecondaryButton>
 </template>

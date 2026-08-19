@@ -18,6 +18,7 @@ const props = withDefaults(
     disabled?: boolean
     autocomplete?: string
     inputmode?: InputMode
+    reserveErrorSpace?: boolean
     class?: string
   }>(),
   {
@@ -28,6 +29,7 @@ const props = withDefaults(
     disabled: false,
     autocomplete: undefined,
     inputmode: undefined,
+    reserveErrorSpace: false,
     class: undefined,
   },
 )
@@ -50,6 +52,7 @@ const inputId = computed(() => createFormFieldId(props.name))
     :disabled="props.disabled"
     :autocomplete="props.autocomplete"
     :inputmode="props.inputmode"
+    :reserve-error-space="props.reserveErrorSpace"
     :class="props.class"
     @focusout="handleBlur"
     @update:model-value="handleChange"

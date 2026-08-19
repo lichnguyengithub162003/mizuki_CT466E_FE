@@ -13,14 +13,22 @@ export interface AuthenticatedUser {
   readonly created_at: string
 }
 
-export interface LoginPayload {
-  readonly email: string
-  readonly password: string
-}
+export type LoginPayload =
+  | {
+      readonly email: string
+      readonly phone?: never
+      readonly password: string
+    }
+  | {
+      readonly phone: string
+      readonly email?: never
+      readonly password: string
+    }
 
 export interface RegisterPayload {
   readonly name: string
   readonly email: string
+  readonly phone: string
   readonly password: string
   readonly password_confirmation: string
 }

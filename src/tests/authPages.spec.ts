@@ -27,7 +27,12 @@ const authApiMocks = vi.hoisted(() => ({
   getGoogleRedirectUrl: vi.fn(),
 }))
 
+const browserNavigationMocks = vi.hoisted(() => ({
+  assignBrowserLocation: vi.fn(),
+}))
+
 vi.mock('@/api/auth/authApi', () => authApiMocks)
+vi.mock('@/utils/auth/browserNavigation', () => browserNavigationMocks)
 
 const user: AuthenticatedUser = {
   id: 1,
@@ -45,6 +50,33 @@ const user: AuthenticatedUser = {
 interface MountedAuthPage {
   readonly wrapper: VueWrapper
   readonly router: Router
+}
+
+function stubMatchMedia(initialMatches: boolean): {
+  setMatches: (matches: boolean) => void
+} {
+  const listeners = new Set<(event: MediaQueryListEvent) => void>()
+  const mediaQuery = {
+    matches: initialMatches,
+    media: '(max-width: 767px)',
+    onchange: null,
+    addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+      listeners.add(listener)
+    }),
+    removeEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+      listeners.delete(listener)
+    }),
+  }
+
+  vi.stubGlobal('matchMedia', vi.fn(() => mediaQuery))
+
+  return {
+    setMatches(matches: boolean): void {
+      mediaQuery.matches = matches
+      const event = { matches, media: mediaQuery.media } as MediaQueryListEvent
+      listeners.forEach((listener) => listener(event))
+    },
+  }
 }
 
 function applicationError(
@@ -94,9 +126,10 @@ async function fillLogin(wrapper: VueWrapper): Promise<void> {
   await wrapper.get('input[name="password"]').setValue('password')
 }
 
-async function fillRegister(wrapper: VueWrapper): Promise<void> {
+async function fillRegister(wrapper: VueWrapper, phone: string | null = '0368123456'): Promise<void> {
   await wrapper.get('input[name="fullName"]').setValue('Nguyễn Văn A')
   await wrapper.get('input[name="email"]').setValue('  USER@EXAMPLE.COM ')
+  if (phone !== null) await wrapper.get('input[name="phone"]').setValue(phone)
   await wrapper.get('input[name="password"]').setValue('Password123!')
   await wrapper.get('input[name="confirmPassword"]').setValue('Password123!')
   await wrapper.get('[role="checkbox"]').trigger('click')
@@ -109,6 +142,7 @@ describe('F3g customer authentication integration', () => {
     usePasswordRecovery().clear()
     useAuthStore(appPinia).resetForTesting()
     vi.clearAllMocks()
+    stubMatchMedia(true)
     authApiMocks.login.mockResolvedValue(user)
     authApiMocks.register.mockResolvedValue(user)
     authApiMocks.getCurrentUser.mockRejectedValue(applicationError('Bạn cần đăng nhập để tiếp tục'))
@@ -119,6 +153,7 @@ describe('F3g customer authentication integration', () => {
       expires_in: 600,
     })
     authApiMocks.resetPassword.mockResolvedValue(undefined)
+    authApiMocks.getGoogleRedirectUrl.mockResolvedValue('https://accounts.google.com/o/oauth2/auth?state=opaque')
   })
 
   afterEach(() => {
@@ -130,10 +165,98 @@ describe('F3g customer authentication integration', () => {
     const onboarding = await mountPage(OnboardingPage, '/onboarding')
     expect(onboarding.wrapper.findAll('[aria-label^="Xem bước"]')).toHaveLength(2)
     expect(onboarding.wrapper.get('[data-testid="onboarding-image"]').attributes('src')).toBe('/images/auth/onboarding-1.jpg')
+    expect(onboarding.wrapper.get('h1').text()).toBe('Chọn chăm sóc hợp với bạn.')
+    expect(onboarding.wrapper.text()).toContain('MIZUKI EVERYDAY')
+
+    const continueButton = onboarding.wrapper.findAll('button').find((button) => button.text().includes('Tiếp tục'))
+    expect(continueButton).toBeDefined()
+    await continueButton?.trigger('click')
+    expect(onboarding.wrapper.get('[data-testid="onboarding-image"]').attributes('src')).toBe('/images/auth/onboarding-2.jpg')
+    expect(onboarding.wrapper.get('h1').text()).toBe('Đặt lịch, chọn chi nhánh, thư giãn.')
+    expect(onboarding.wrapper.text()).toContain('CHĂM SÓC GẦN BẠN')
+
+    const startButton = onboarding.wrapper.findAll('button').find((button) => button.text().includes('Bắt đầu'))
+    expect(startButton).toBeDefined()
+    await startButton?.trigger('click')
+    await flushPromises()
+    expect(window.localStorage.getItem('mizuki:onboarding-seen')).toBe('true')
+    expect(onboarding.router.currentRoute.value.path).toBe('/login')
 
     const login = await mountPage(LoginPage)
     expect(login.wrapper.get('[data-testid="auth-hero-image"]').attributes('src')).toBe('/images/auth/login-hero-mobile.jpg')
     expect(login.wrapper.find('[src^="http"]').exists()).toBe(false)
+  })
+
+  it('preserves onboarding skip and mobile-only routing behavior', async () => {
+    const onboarding = await mountPage(OnboardingPage, '/onboarding')
+    const skipButton = onboarding.wrapper.findAll('button').find((button) => button.text().includes('Bỏ qua'))
+    expect(skipButton).toBeDefined()
+    await skipButton?.trigger('click')
+    await flushPromises()
+    expect(window.localStorage.getItem('mizuki:onboarding-seen')).toBe('true')
+    expect(onboarding.router.currentRoute.value.path).toBe('/login')
+
+    window.localStorage.clear()
+    stubMatchMedia(true)
+    const mobileRouter = createAppRouter(createMemoryHistory())
+    await mobileRouter.push('/login')
+    expect(mobileRouter.currentRoute.value.path).toBe('/onboarding')
+
+    window.localStorage.setItem('mizuki:onboarding-seen', 'true')
+    await mobileRouter.push('/login')
+    expect(mobileRouter.currentRoute.value.path).toBe('/login')
+
+    stubMatchMedia(false)
+    const desktopRouter = createAppRouter(createMemoryHistory())
+    await desktopRouter.push('/login')
+    expect(desktopRouter.currentRoute.value.path).toBe('/login')
+    await desktopRouter.push('/onboarding')
+    expect(desktopRouter.currentRoute.value.path).toBe('/login')
+
+    vi.stubGlobal('matchMedia', undefined)
+    const routerWithoutMatchMedia = createAppRouter(createMemoryHistory())
+    window.localStorage.clear()
+    await routerWithoutMatchMedia.push('/login')
+    expect(routerWithoutMatchMedia.currentRoute.value.path).toBe('/login')
+    await routerWithoutMatchMedia.push('/onboarding')
+    expect(routerWithoutMatchMedia.currentRoute.value.path).toBe('/login')
+  })
+
+  it('leaves onboarding immediately when the viewport crosses the mobile breakpoint', async () => {
+    const viewport = stubMatchMedia(true)
+    const onboarding = await mountPage(OnboardingPage, '/onboarding')
+
+    viewport.setMatches(false)
+    await flushPromises()
+
+    expect(onboarding.router.currentRoute.value.path).toBe('/login')
+  })
+
+  it('keeps floating labels accessible and responds to focus, values, and password visibility', async () => {
+    const { wrapper } = await mountPage(LoginPage)
+    const email = wrapper.get('input[name="email"]')
+    const emailInput = email.element as HTMLInputElement
+    const emailId = email.attributes('id')
+    const emailLabel = wrapper.get(`label[for="${emailId}"]`)
+
+    expect(emailId).toBeTruthy()
+    expect(email.attributes('placeholder')).toBe(' ')
+    expect(emailLabel.text()).toContain('Email')
+    expect(email.element.nextElementSibling).toBe(emailLabel.element)
+    expect(emailLabel.classes()).toContain('top-1/2')
+
+    emailInput.focus()
+    await email.trigger('focus')
+    expect(document.activeElement).toBe(email.element)
+    await email.setValue('customer@example.com')
+    await email.trigger('blur')
+    expect(emailInput.value).toBe('customer@example.com')
+
+    const password = wrapper.get('input[name="password"]')
+    expect(password.attributes('type')).toBe('password')
+    await wrapper.get('button[aria-label="Hiện mật khẩu"]').trigger('click')
+    expect(password.attributes('type')).toBe('text')
+    expect(wrapper.get('button[aria-label="Ẩn mật khẩu"]')).toBeTruthy()
   })
 
   it('submits normalized login credentials and stores the authenticated user', async () => {
@@ -141,7 +264,57 @@ describe('F3g customer authentication integration', () => {
     await fillLogin(wrapper)
     await wrapper.get('[data-testid="login-form"]').trigger('submit')
     await vi.waitFor(() => expect(authApiMocks.login).toHaveBeenCalledWith({ email: 'customer@example.com', password: 'password' }))
+    expect(authApiMocks.login.mock.calls[0]?.[0]).not.toHaveProperty('phone')
     expect(useAuthStore().user).toEqual(user)
+    expect(router.currentRoute.value.path).toBe('/home')
+  })
+
+  it('switches credential modes below Google while preserving the password and clearing stale errors', async () => {
+    authApiMocks.login.mockRejectedValueOnce(applicationError('Dữ liệu không hợp lệ', {
+      email: ['Email không hợp lệ.'],
+    }))
+    const { wrapper } = await mountPage(LoginPage)
+    await fillLogin(wrapper)
+    await wrapper.get('[data-testid="login-form"]').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Email không hợp lệ.'))
+
+    const google = wrapper.findAll('button').find((button) => button.text().includes('Google'))
+    const toggle = wrapper.get('[data-testid="credential-mode-toggle"]')
+    if (!google) throw new Error('Google button not found')
+    expect(google.element.compareDocumentPosition(toggle.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(toggle.attributes('type')).toBe('button')
+    expect(toggle.text()).toBe('Đăng nhập bằng số điện thoại')
+    await toggle.trigger('click')
+
+    expect(wrapper.get('input[name="email"]').isVisible()).toBe(false)
+    const phone = wrapper.get('input[name="phone"]')
+    expect(phone.isVisible()).toBe(true)
+    expect(phone.attributes()).toMatchObject({ type: 'tel', inputmode: 'tel', autocomplete: 'tel' })
+    expect((wrapper.get('input[name="password"]').element as HTMLInputElement).value).toBe('password')
+    expect(wrapper.text()).not.toContain('Email không hợp lệ.')
+    expect(wrapper.text()).not.toMatch(/OTP/i)
+    expect(wrapper.get('a[href="/forgot-password"]').text()).toContain('Quên mật khẩu?')
+    expect(toggle.text()).toBe('Đăng nhập bằng email')
+
+    await toggle.trigger('click')
+    expect(wrapper.get('input[name="phone"]').isVisible()).toBe(false)
+    expect(wrapper.get('input[name="email"]').isVisible()).toBe(true)
+    expect(wrapper.get('input[name="email"]').attributes('type')).toBe('email')
+    expect((wrapper.get('input[name="password"]').element as HTMLInputElement).value).toBe('password')
+  })
+
+  it('submits the exact phone-only login payload', async () => {
+    const { wrapper, router } = await mountPage(LoginPage)
+    await wrapper.get('[data-testid="credential-mode-toggle"]').trigger('click')
+    await wrapper.get('input[name="phone"]').setValue('0368123456')
+    await wrapper.get('input[name="password"]').setValue('password')
+    await wrapper.get('[data-testid="login-form"]').trigger('submit')
+
+    await vi.waitFor(() => expect(authApiMocks.login).toHaveBeenCalledWith({
+      phone: '0368123456',
+      password: 'password',
+    }))
+    expect(authApiMocks.login.mock.calls[0]?.[0]).not.toHaveProperty('email')
     expect(router.currentRoute.value.path).toBe('/home')
   })
 
@@ -152,8 +325,10 @@ describe('F3g customer authentication integration', () => {
     const { wrapper } = await mountPage(LoginPage)
     await fillLogin(wrapper)
     await wrapper.get('[data-testid="login-form"]').trigger('submit')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Thông tin đăng nhập không đúng!'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Email không hợp lệ.'))
     expect(wrapper.text()).toContain('Email không hợp lệ.')
+    expect(wrapper.text()).not.toContain('Thông tin đăng nhập không đúng!')
+    expect(wrapper.text()).not.toContain('Vui lòng kiểm tra lại thông tin')
   })
 
   it('prevents duplicate login while the request is pending', async () => {
@@ -168,9 +343,10 @@ describe('F3g customer authentication integration', () => {
     await flushPromises()
   })
 
-  it('registers with the exact backend payload and never sends phone', async () => {
+  it('registers with the exact backend payload including canonical phone', async () => {
     const { wrapper, router } = await mountPage(RegisterPage)
-    expect(wrapper.find('input[name="phone"]').exists()).toBe(false)
+    const phone = wrapper.get('input[name="phone"]')
+    expect(phone.attributes()).toMatchObject({ type: 'tel', inputmode: 'tel', autocomplete: 'tel', required: '' })
     await fillRegister(wrapper)
     await wrapper.get('[data-testid="register-form"]').trigger('submit')
     await vi.waitFor(() => expect(authApiMocks.register).toHaveBeenCalledOnce())
@@ -179,12 +355,52 @@ describe('F3g customer authentication integration', () => {
     expect(payload).toEqual({
       name: 'Nguyễn Văn A',
       email: 'user@example.com',
+      phone: '0368123456',
       password: 'Password123!',
       password_confirmation: 'Password123!',
     })
-    expect(payload).not.toHaveProperty('phone')
     expect(useAuthStore().user).toEqual(user)
     expect(router.currentRoute.value.path).toBe('/home')
+  })
+
+  it('disables every editable registration field while submission is pending', async () => {
+    let resolveRegister: ((value: AuthenticatedUser) => void) | undefined
+    authApiMocks.register.mockReturnValue(new Promise<AuthenticatedUser>((resolve) => { resolveRegister = resolve }))
+    const { wrapper } = await mountPage(RegisterPage)
+    await fillRegister(wrapper)
+    await wrapper.get('[data-testid="register-form"]').trigger('submit')
+    await vi.waitFor(() => expect(authApiMocks.register).toHaveBeenCalledOnce())
+
+    for (const input of wrapper.findAll('[data-testid="register-form"] input')) {
+      expect(input.attributes('disabled')).toBeDefined()
+    }
+
+    resolveRegister?.(user)
+    await flushPromises()
+  })
+
+  it('requires a canonical Vietnamese mobile number for registration', async () => {
+    const { wrapper } = await mountPage(RegisterPage)
+    await fillRegister(wrapper, null)
+    await wrapper.get('[data-testid="register-form"]').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Vui lòng nhập số điện thoại.'))
+    expect(wrapper.text()).not.toContain('Vui lòng kiểm tra lại thông tin')
+    expect(authApiMocks.register).not.toHaveBeenCalled()
+
+    await wrapper.get('input[name="phone"]').setValue('0212345678')
+    await wrapper.get('[data-testid="register-form"]').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Số điện thoại chưa đúng định dạng Việt Nam.'))
+    expect(authApiMocks.register).not.toHaveBeenCalled()
+  })
+
+  it('maps backend registration phone errors to the phone field', async () => {
+    authApiMocks.register.mockRejectedValue(applicationError('Dữ liệu không hợp lệ', {
+      phone: ['Số điện thoại đã được sử dụng.'],
+    }))
+    const { wrapper } = await mountPage(RegisterPage)
+    await fillRegister(wrapper)
+    await wrapper.get('[data-testid="register-form"]').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Số điện thoại đã được sử dụng.'))
   })
 
   it('shows duplicate registration email returned by Laravel', async () => {
@@ -286,7 +502,7 @@ describe('F3g customer authentication integration', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('đã hết hạn hoặc đã được sử dụng'))
   })
 
-  it('guards missing recovery state and exposes Google as an enabled semantic button', async () => {
+  it('guards missing recovery state and keeps Google login functional and unchanged', async () => {
     const router = createAppRouter(createMemoryHistory())
     await router.push('/verify-reset-code')
     expect(router.currentRoute.value.path).toBe('/forgot-password')
@@ -300,6 +516,12 @@ describe('F3g customer authentication integration', () => {
     expect(google.element.tagName).toBe('BUTTON')
     expect(google.attributes('type')).toBe('button')
     expect(google.attributes('disabled')).toBeUndefined()
+    await google.trigger('click')
+    await vi.waitFor(() => expect(authApiMocks.getGoogleRedirectUrl).toHaveBeenCalledWith(undefined))
+    expect(browserNavigationMocks.assignBrowserLocation).toHaveBeenCalledWith(
+      'https://accounts.google.com/o/oauth2/auth?state=opaque',
+    )
+    expect(wrapper.get('a[href="/forgot-password"]').text()).toContain('Quên mật khẩu?')
   })
 
   it('normalizes auth email without persisting secrets', () => {

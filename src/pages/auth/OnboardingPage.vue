@@ -1,44 +1,75 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ArrowRight, Sparkles } from '@lucide/vue'
-import { useRouter } from 'vue-router'
-import BaseButton from '@/components/common/BaseButton.vue'
-import { ROUTE_NAMES } from '@/constants/routes'
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { ArrowRight, Sparkles } from "@lucide/vue";
+import { useRouter } from "vue-router";
+import BaseButton from "@/components/common/BaseButton.vue";
+import { ROUTE_NAMES } from "@/constants/routes";
+import { getMobileOnboardingMediaQuery } from "@/utils/auth/mobileOnboarding";
 
 const slides = [
   {
-    eyebrow: 'MIZUKI EVERYDAY',
-    title: 'Chọn chăm sóc hợp với bạn.',
-    description: 'Khám phá chăm sóc da, tóc và mỹ phẩm trong một trải nghiệm gọn nhẹ.',
-    imageSrc: '/images/auth/onboarding-1.jpg',
-    imageAlt: 'Không gian chăm sóc lấy cảm hứng từ thiên nhiên',
-    objectPosition: '86% center',
+    eyebrow: "MIZUKI EVERYDAY",
+    title: "Chọn chăm sóc hợp với bạn.",
+    description:
+      "Khám phá chăm sóc da, tóc và mỹ phẩm trong một trải nghiệm gọn nhẹ.",
+    imageSrc: "/images/auth/onboarding-1.jpg",
+    imageAlt: "Không gian chăm sóc lấy cảm hứng từ thiên nhiên",
+    objectPosition: "86% center",
   },
   {
-    eyebrow: 'CHĂM SÓC GẦN BẠN',
-    title: 'Đặt lịch, chọn chi nhánh, thư giãn.',
-    description: 'Chủ động chọn dịch vụ và nhận ưu đãi phù hợp tại chi nhánh Mizuki thuận tiện.',
-    imageSrc: '/images/auth/onboarding-2.jpg',
-    imageAlt: 'Không gian tươi sáng cho hành trình chăm sóc cá nhân',
-    objectPosition: '52% center',
+    eyebrow: "CHĂM SÓC GẦN BẠN",
+    title: "Đặt lịch, chọn chi nhánh, thư giãn.",
+    description:
+      "Chủ động chọn dịch vụ và nhận ưu đãi phù hợp tại chi nhánh Mizuki thuận tiện.",
+    imageSrc: "/images/auth/onboarding-2.jpg",
+    imageAlt: "Không gian tươi sáng cho hành trình chăm sóc cá nhân",
+    objectPosition: "52% center",
   },
-] as const
+] as const;
 
-const activeIndex = ref(0)
-const router = useRouter()
-const activeSlide = computed(() => slides[activeIndex.value] ?? slides[0])
+const activeIndex = ref(0);
+const activeSlide = computed(() => slides[activeIndex.value]);
+
+const router = useRouter();
+
+let onboardingMedia: MediaQueryList | null = null;
+
+function handleOnboardingViewport(
+  event: MediaQueryListEvent | MediaQueryList,
+): void {
+  if (!event.matches) {
+    void router.replace({ name: ROUTE_NAMES.login });
+  }
+}
+
+onMounted(() => {
+  onboardingMedia = getMobileOnboardingMediaQuery();
+
+  if (!onboardingMedia) {
+    void router.replace({ name: ROUTE_NAMES.login });
+    return;
+  }
+
+  handleOnboardingViewport(onboardingMedia);
+  onboardingMedia.addEventListener?.("change", handleOnboardingViewport);
+});
+
+onBeforeUnmount(() => {
+  onboardingMedia?.removeEventListener?.("change", handleOnboardingViewport);
+});
 
 async function finishOnboarding(): Promise<void> {
-  window.localStorage.setItem('mizuki:onboarding-seen', 'true')
-  await router.replace({ name: ROUTE_NAMES.login })
+  window.localStorage.setItem("mizuki:onboarding-seen", "true");
+  await router.replace({ name: ROUTE_NAMES.login });
 }
 
 async function continueOnboarding(): Promise<void> {
   if (activeIndex.value < slides.length - 1) {
-    activeIndex.value += 1
-    return
+    activeIndex.value += 1;
+    return;
   }
-  await finishOnboarding()
+
+  await finishOnboarding();
 }
 </script>
 
@@ -71,16 +102,25 @@ async function continueOnboarding(): Promise<void> {
       </header>
 
       <div class="relative z-10 mt-auto pb-2">
-        <p class="flex items-center gap-2 text-caption font-bold tracking-[0.16em] text-white/85">
+        <p
+          class="flex items-center gap-2 text-caption font-bold tracking-[0.16em] text-white/85"
+        >
           <Sparkles class="size-4" aria-hidden="true" />
           {{ activeSlide.eyebrow }}
         </p>
-        <h1 class="mt-3 max-w-sm text-[2.6rem] font-bold leading-[1.03] tracking-[-0.045em] text-white">
+        <h1
+          class="mt-3 max-w-sm text-[2.6rem] font-bold leading-[1.03] tracking-[-0.045em] text-white"
+        >
           {{ activeSlide.title }}
         </h1>
-        <p class="mt-4 max-w-sm text-body-md text-white/90">{{ activeSlide.description }}</p>
+        <p class="mt-4 max-w-sm text-body-md text-white/90">
+          {{ activeSlide.description }}
+        </p>
 
-        <div class="mt-7 flex justify-center gap-2" aria-label="Tiến trình giới thiệu">
+        <div
+          class="mt-7 flex justify-center gap-2"
+          aria-label="Tiến trình giới thiệu"
+        >
           <button
             v-for="(_, index) in slides"
             :key="index"
@@ -97,7 +137,7 @@ async function continueOnboarding(): Promise<void> {
           class="mt-5 w-full rounded-xl bg-white text-primary-950 shadow-md hover:bg-white/90"
           @click="continueOnboarding"
         >
-          {{ activeIndex === slides.length - 1 ? 'Bắt đầu' : 'Tiếp tục' }}
+          {{ activeIndex === slides.length - 1 ? "Bắt đầu" : "Tiếp tục" }}
           <ArrowRight class="size-4" aria-hidden="true" />
         </BaseButton>
       </div>

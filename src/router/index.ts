@@ -9,6 +9,7 @@ import { ROUTE_NAMES, ROUTE_PATHS } from '@/constants/routes'
 import { canAccessResetCode, canAccessResetPassword } from '@/composables/auth/usePasswordRecovery'
 import { useAuthStore } from '@/stores/auth'
 import { pinia } from '@/stores/pinia'
+import { isMobileOnboardingViewport } from '@/utils/auth/mobileOnboarding'
 
 const routes: readonly RouteRecordRaw[] = [
   {
@@ -175,9 +176,7 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
     if (
       to.name === ROUTE_NAMES.login &&
       typeof to.query.oauth_error !== 'string' &&
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(max-width: 767px)').matches &&
+      isMobileOnboardingViewport() &&
       window.localStorage.getItem('mizuki:onboarding-seen') !== 'true'
     ) {
       return { name: ROUTE_NAMES.onboarding }
@@ -185,9 +184,7 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
 
     if (
       to.name === ROUTE_NAMES.onboarding &&
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      !window.matchMedia('(max-width: 767px)').matches
+      !isMobileOnboardingViewport()
     ) {
       return { name: ROUTE_NAMES.login }
     }

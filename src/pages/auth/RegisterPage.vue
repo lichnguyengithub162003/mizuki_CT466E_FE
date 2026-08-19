@@ -5,12 +5,11 @@ import { useForm } from "vee-validate";
 import { RouterLink, useRouter } from "vue-router";
 import BaseButton from "@/components/common/BaseButton.vue";
 import FormCheckbox from "@/components/form/FormCheckbox.vue";
-import FormErrorSummary from "@/components/form/FormErrorSummary.vue";
-import FormInput from "@/components/form/FormInput.vue";
 import {
+  AuthFloatingField,
   AuthGoogleButton,
+  AuthIntro,
   AuthLayout,
-  AuthPasswordField,
   applyAuthApiError,
   focusFirstAuthFormError,
 } from "@/components/auth";
@@ -31,6 +30,7 @@ const { errors, setFieldError, setFieldValue, validate, values } =
     initialValues: {
       fullName: "",
       email: "",
+      phone: "",
       password: "",
       confirmPassword: "",
       terms: false,
@@ -55,6 +55,7 @@ async function submit(): Promise<void> {
     await authStore.register({
       name: values.fullName.trim(),
       email,
+      phone: values.phone.trim(),
       password: values.password,
       password_confirmation: values.confirmPassword,
     });
@@ -65,6 +66,7 @@ async function submit(): Promise<void> {
       {
         name: "fullName",
         email: "email",
+        phone: "phone",
         password: "password",
         password_confirmation: "confirmPassword",
       },
@@ -100,65 +102,56 @@ async function handleGoogleLogin(): Promise<void> {
     mobile-visual-src="/images/auth/login-hero-mobile.jpg"
     desktop-visual-src="/images/auth/login-hero-desktop.jpg"
   >
-    <header class="mb-4 mt-5">
-      <p
-        class="text-caption font-semibold uppercase tracking-[0.14em] text-primary-700"
-      >
-        Bắt đầu cùng Mizuki
-      </p>
-      <h1 class="mt-2 text-heading-1">Tạo tài khoản</h1>
-    </header>
+    <AuthIntro title="Tạo tài khoản" />
 
     <form
-      class="grid gap-3"
+      class="grid gap-3.5 lg:gap-3"
       novalidate
       data-testid="register-form"
       @submit.prevent="submit"
     >
-      <FormErrorSummary
-        :errors="errors"
-        :form-error="formError"
-        :labels="{
-          fullName: 'Họ và tên',
-          email: 'Email',
-          password: 'Mật khẩu',
-          confirmPassword: 'Xác nhận mật khẩu',
-          terms: 'Điều khoản',
-        }"
-      />
-      <div class="grid gap-3 sm:grid-cols-2">
-        <FormInput
+      <div class="grid items-start gap-3.5 lg:grid-cols-2">
+        <AuthFloatingField
           name="fullName"
           label="Họ và tên"
           autocomplete="name"
           required
-          placeholder="Nguyễn An"
-          class="[&_input]:h-12 [&_input]:rounded-xl"
+          :disabled="submitting"
         />
-        <FormInput
+        <AuthFloatingField
           name="email"
           label="Email"
           type="email"
           inputmode="email"
           autocomplete="email"
           required
-          placeholder="ban@example.com"
-          class="[&_input]:h-12 [&_input]:rounded-xl"
-        />
-      </div>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <AuthPasswordField
-          name="password"
-          label="Mật khẩu"
-          autocomplete="new-password"
-          placeholder="Ít nhất 8 ký tự"
           :disabled="submitting"
         />
-        <AuthPasswordField
+      </div>
+      <AuthFloatingField
+        name="phone"
+        label="Số điện thoại"
+        type="tel"
+        inputmode="tel"
+        autocomplete="tel"
+        required
+        :disabled="submitting"
+      />
+      <div class="grid items-start gap-3.5 xl:grid-cols-2">
+        <AuthFloatingField
+          name="password"
+          label="Mật khẩu"
+          type="password"
+          autocomplete="new-password"
+          required
+          :disabled="submitting"
+        />
+        <AuthFloatingField
           name="confirmPassword"
           label="Xác nhận mật khẩu"
+          type="password"
           autocomplete="new-password"
-          placeholder="Nhập lại mật khẩu"
+          required
           :disabled="submitting"
         />
       </div>
@@ -170,18 +163,26 @@ async function handleGoogleLogin(): Promise<void> {
       <BaseButton
         type="submit"
         size="lg"
-        class="w-full rounded-xl text-white"
+        class="h-13 w-full rounded-xl text-body-md text-white shadow-sm"
         :loading="submitting"
       >
         Tạo tài khoản
       </BaseButton>
+      <p
+        v-if="formError && !Object.keys(errors).length"
+        class="text-center text-caption text-destructive"
+        role="alert"
+        aria-live="assertive"
+      >
+        {{ formError }}
+      </p>
       <AuthGoogleButton
         label="Đăng ký với Google"
         :loading="googlePending"
         @click="handleGoogleLogin"
       />
     </form>
-    <p class="mt-5 text-center text-body-sm text-text-secondary">
+    <p class="mt-5 text-center text-body-sm text-text-secondary lg:mt-4">
       Đã có tài khoản?
       <RouterLink to="/login" class="font-semibold text-primary-700"
         >Đăng nhập</RouterLink

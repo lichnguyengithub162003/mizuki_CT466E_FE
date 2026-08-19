@@ -14,6 +14,7 @@ const props = withDefaults(
     error?: string
     disabled?: boolean
     required?: boolean
+    reserveErrorSpace?: boolean
     class?: string
   }>(),
   {
@@ -22,6 +23,7 @@ const props = withDefaults(
     error: undefined,
     disabled: false,
     required: false,
+    reserveErrorSpace: false,
     class: undefined,
   },
 )
@@ -62,8 +64,14 @@ const describedBy = computed(() =>
       <p v-if="props.description" :id="descriptionId" class="text-caption text-muted-foreground">
         {{ props.description }}
       </p>
-      <p v-if="props.error" :id="errorId" class="text-caption text-destructive" role="alert">
-        <span class="sr-only">Lỗi: </span>{{ props.error }}
+      <p
+        v-if="props.error || props.reserveErrorSpace"
+        :id="props.error ? errorId : undefined"
+        :aria-hidden="props.error ? undefined : 'true'"
+        :role="props.error ? 'alert' : undefined"
+        class="min-h-[1.125rem] text-caption text-destructive"
+      >
+        <template v-if="props.error"><span class="sr-only">Lỗi: </span>{{ props.error }}</template>
       </p>
     </div>
   </div>

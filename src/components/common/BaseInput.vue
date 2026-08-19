@@ -18,6 +18,7 @@ const props = withDefaults(
     inputmode?: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
     disabled?: boolean
     required?: boolean
+    reserveErrorSpace?: boolean
     class?: string
   }>(),
   {
@@ -32,6 +33,7 @@ const props = withDefaults(
     inputmode: undefined,
     disabled: false,
     required: false,
+    reserveErrorSpace: false,
     class: undefined,
   },
 )
@@ -65,7 +67,7 @@ function handleInput(event: Event): void {
 </script>
 
 <template>
-  <div :class="cn('grid gap-2', props.class)">
+  <div :class="cn('grid gap-2', props.reserveErrorSpace && 'content-start', props.class)">
     <label :for="inputId" class="text-body-sm font-semibold text-foreground">
       {{ props.label }}
       <span v-if="props.required" class="text-destructive" aria-hidden="true">*</span>
@@ -111,8 +113,14 @@ function handleInput(event: Event): void {
     <p v-if="props.description" :id="descriptionId" class="text-caption text-muted-foreground">
       {{ props.description }}
     </p>
-    <p v-if="props.error" :id="errorId" class="text-caption text-destructive">
-      {{ props.error }}
+    <p
+      v-if="props.error || props.reserveErrorSpace"
+      :id="props.error ? errorId : undefined"
+      :aria-hidden="props.error ? undefined : 'true'"
+      :role="props.error ? 'alert' : undefined"
+      class="min-h-[1.125rem] text-caption text-destructive"
+    >
+      {{ props.error ?? '' }}
     </p>
   </div>
 </template>

@@ -70,15 +70,32 @@ describe('auth store', () => {
     authApiMocks.login.mockResolvedValue(user)
     authApiMocks.register.mockResolvedValue(user)
     const store = useAuthStore()
-    await store.login({ email: user.email, password: 'password' })
+    const emailPayload = { email: user.email, password: 'password' }
+    await store.login(emailPayload)
+    expect(authApiMocks.login).toHaveBeenCalledWith(emailPayload)
     expect(store.user).toEqual(user)
     store.clearSession()
-    await store.register({
+    const registerPayload = {
       name: user.name,
       email: user.email,
+      phone: '0368123456',
       password: 'Password123!',
       password_confirmation: 'Password123!',
-    })
+    }
+    await store.register(registerPayload)
+    expect(authApiMocks.register).toHaveBeenCalledWith(registerPayload)
+    expect(store.user).toEqual(user)
+  })
+
+  it('forwards phone-only login credentials without adding email', async () => {
+    authApiMocks.login.mockResolvedValue(user)
+    const store = useAuthStore()
+    const payload = { phone: '0368123456', password: 'password' }
+
+    await store.login(payload)
+
+    expect(authApiMocks.login).toHaveBeenCalledWith(payload)
+    expect(authApiMocks.login.mock.calls[0]?.[0]).not.toHaveProperty('email')
     expect(store.user).toEqual(user)
   })
 

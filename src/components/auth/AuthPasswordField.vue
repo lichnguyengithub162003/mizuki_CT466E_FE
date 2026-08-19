@@ -10,6 +10,7 @@ const props = defineProps<{
   placeholder?: string
   autocomplete?: string
   disabled?: boolean
+  reserveErrorSpace?: boolean
 }>()
 
 const visible = ref(false)
@@ -19,7 +20,7 @@ const errorId = computed(() => `${inputId.value}-error`)
 </script>
 
 <template>
-  <div class="grid gap-2">
+  <div :class="['grid gap-2', props.reserveErrorSpace && 'content-start']">
     <label :for="inputId" class="text-body-sm font-semibold">{{ props.label }}</label>
     <div class="relative">
       <LockKeyhole class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" aria-hidden="true" />
@@ -48,8 +49,14 @@ const errorId = computed(() => `${inputId.value}-error`)
         <Eye v-else class="size-4" aria-hidden="true" />
       </button>
     </div>
-    <p v-if="errorMessage" :id="errorId" class="text-caption text-destructive" role="alert">
-      {{ errorMessage }}
+    <p
+      v-if="errorMessage || props.reserveErrorSpace"
+      :id="errorMessage ? errorId : undefined"
+      :aria-hidden="errorMessage ? undefined : 'true'"
+      :role="errorMessage ? 'alert' : undefined"
+      class="min-h-[1.125rem] text-caption text-destructive"
+    >
+      {{ errorMessage ?? '' }}
     </p>
   </div>
 </template>

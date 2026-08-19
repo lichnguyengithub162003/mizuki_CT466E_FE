@@ -57,17 +57,26 @@ describe('auth API contract', () => {
     expect(apiMocks.post).toHaveBeenCalledWith(ENDPOINTS.authLogin, payload)
   })
 
-  it('posts registration without phone', async () => {
+  it('initializes CSRF and posts the exact phone login payload', async () => {
+    const payload = { phone: '0368123456', password: 'password' }
+    apiMocks.post.mockResolvedValue({ data: { data: user } })
+    await expect(login(payload)).resolves.toEqual(user)
+    expect(apiMocks.ensureCsrfCookie).toHaveBeenCalledOnce()
+    expect(apiMocks.post).toHaveBeenCalledWith(ENDPOINTS.authLogin, payload)
+    expect(payload).not.toHaveProperty('email')
+  })
+
+  it('posts registration with the exact required phone payload', async () => {
     const payload = {
       name: 'Nguyễn Văn A',
       email: 'user@example.com',
+      phone: '0368123456',
       password: 'Password123!',
       password_confirmation: 'Password123!',
     }
     apiMocks.post.mockResolvedValue({ data: { data: user } })
     await register(payload)
     expect(apiMocks.post).toHaveBeenCalledWith(ENDPOINTS.authRegister, payload)
-    expect(payload).not.toHaveProperty('phone')
   })
 
   it('restores the cookie session through auth/me without bearer data', async () => {
