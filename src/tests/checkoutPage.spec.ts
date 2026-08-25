@@ -16,7 +16,10 @@ import type {
 } from '@/api/locations/locationTypes'
 import type { CheckoutAddress, CheckoutScenario } from '@/types/customer'
 import { useAuthStore } from '@/stores/auth'
+import { useBranchPreferenceStore } from '@/stores/branchPreference'
+import { BRANCH_PREFERENCE_KEY } from '@/stores/branchPreference'
 import { pinia } from '@/stores/pinia'
+import { customerShippingQuoteKeys } from '@/queries/shipping'
 
 const locationApiMocks = vi.hoisted(() => ({
   listLocationProvinces: vi.fn(),
@@ -40,9 +43,88 @@ const addressApiMocks = vi.hoisted(() => ({
   deleteCustomerAddress: vi.fn(),
 }))
 
+const shippingApiMocks = vi.hoisted(() => ({
+  getCustomerShippingQuote: vi.fn(),
+}))
+
+const orderApiMocks = vi.hoisted(() => ({
+  createCustomerOrder: vi.fn(),
+}))
+
 vi.mock('@/api/locations/locationApi', () => locationApiMocks)
 vi.mock('@/api/cartApi', () => cartApiMocks)
 vi.mock('@/api/addressApi', () => addressApiMocks)
+vi.mock('@/api/shippingApi', () => shippingApiMocks)
+vi.mock('@/api/orderApi', () => orderApiMocks)
+
+const serverCart = {
+  id: 1,
+  branch: { id: 6, name: 'Mizuki Vĩnh Long', address: 'Vĩnh Long' },
+  totalQuantity: 3,
+  totalAmount: 500_000,
+  discountAmount: 25_000,
+  totalAfterDiscount: 475_000,
+  items: [
+    {
+      id: 31,
+      product: {
+        id: 11,
+        name: 'Sữa rửa mặt thật',
+        slug: 'sua-rua-mat-that',
+        brandName: 'La Roche-Posay',
+        imageUrl: 'https://cdn.mizuki.test/products/cleanser.webp',
+      },
+      variant: { id: 71, name: '50ml', sku: 'SKU-71', effectivePrice: 100_000 },
+      quantity: 2,
+      subtotal: 200_000,
+      availableQuantity: 4,
+      stockWarning: false,
+    },
+    {
+      id: 32,
+      product: { id: 12, name: 'Serum thật', slug: 'serum-that', brandName: null },
+      variant: { id: 72, name: '30ml', sku: 'SKU-72', effectivePrice: 300_000 },
+      quantity: 1,
+      subtotal: 300_000,
+      availableQuantity: 2,
+      stockWarning: false,
+    },
+  ],
+}
+
+const activeBranch = {
+  id: 6,
+  code: 'MZ-VL',
+  name: 'Mizuki Vĩnh Long',
+  address: 'Vĩnh Long',
+  phone: null,
+  email: null,
+  is_active: true,
+  opening_hours: [],
+}
+
+const quoteToken17 = 'a'.repeat(64)
+const quoteToken18 = 'b'.repeat(64)
+const firstIdempotencyKey = '11111111-1111-4111-8111-111111111111'
+const secondIdempotencyKey = '22222222-2222-4222-8222-222222222222'
+const orderAttemptStorageKey = 'mizuki:checkout:create-order-attempt:1'
+
+const shippingQuote = {
+  shippingFee: 42_000,
+  expectedDeliveryTime: '2026-08-27T15:00:00+07:00',
+  expiresAt: '2099-08-25T12:00:00Z',
+  quoteToken: quoteToken17,
+}
+
+const createdOrder = {
+  id: 901,
+  orderNumber: 'MZ-20260825-0901',
+  status: 'pending',
+  statusLabel: 'Chờ xác nhận',
+  deliveryMethod: 'delivery' as const,
+  paymentMethod: 'cash' as const,
+  totalAmount: 519_000,
+}
 
 const provinces: readonly LocationProvince[] = [
   { ghn_province_id: 91, name: 'Cần Thơ' },
@@ -84,6 +166,7 @@ const savedAddresses: readonly CheckoutAddress[] = [
 interface MountedCheckout {
   readonly wrapper: VueWrapper
   readonly router: Router
+  readonly queryClient: QueryClient
 }
 
 const mountedWrappers: VueWrapper[] = []
@@ -137,6 +220,39 @@ async function mountCheckout(
     : savedAddresses,
 ): Promise<MountedCheckout> {
   serverAddresses = [...addressFixture]
+  const scenarioUserIds: Partial<Record<CheckoutScenario, number>> = {
+    loading: 101,
+    empty: 102,
+    error: 103,
+  }
+  const scenarioUserId = scenarioUserIds[scenario]
+  if (scenarioUserId !== undefined) {
+    const authStore = useAuthStore(pinia)
+    if (authStore.user) authStore.$patch({ user: { ...authStore.user, id: scenarioUserId } })
+  }
+  if (scenario === 'loading') {
+    cartApiMocks.getCustomerCart.mockReturnValue(new Promise(() => undefined))
+  } else if (scenario === 'empty') {
+    cartApiMocks.getCustomerCart.mockResolvedValue({
+      ...structuredClone(serverCart),
+      items: [],
+      totalQuantity: 0,
+      totalAmount: 0,
+      discountAmount: 0,
+      totalAfterDiscount: 0,
+    })
+  } else if (scenario === 'error') {
+    cartApiMocks.getCustomerCart.mockRejectedValue(new Error('Không thể tải giỏ hàng thật.'))
+  } else if (scenario === 'unavailable') {
+    cartApiMocks.getCustomerCart.mockResolvedValue({
+      ...structuredClone(serverCart),
+      items: [{ ...structuredClone(serverCart.items[0]), stockWarning: true }],
+      totalQuantity: 2,
+      totalAmount: 200_000,
+      discountAmount: 0,
+      totalAfterDiscount: 200_000,
+    })
+  }
   const router = createAppRouter(createMemoryHistory())
   await router.push('/checkout')
   await router.isReady()
@@ -151,7 +267,7 @@ async function mountCheckout(
   mountedWrappers.push(wrapper)
   await flushPromises()
   await nextTick()
-  return { wrapper, router }
+  return { wrapper, router, queryClient }
 }
 
 async function completeAddressForm(): Promise<void> {
@@ -174,6 +290,11 @@ async function completeAddressForm(): Promise<void> {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  vi.spyOn(crypto, 'randomUUID')
+    .mockReturnValueOnce(firstIdempotencyKey)
+    .mockReturnValueOnce(secondIdempotencyKey)
+  window.sessionStorage.clear()
+  window.localStorage.setItem(BRANCH_PREFERENCE_KEY, '6')
   useAuthStore(pinia).$patch({
     user: {
       id: 1,
@@ -189,6 +310,12 @@ beforeEach(() => {
     },
     isInitialized: true,
   })
+  useBranchPreferenceStore(pinia).$patch({
+    branches: [activeBranch],
+    selectedBranchId: 6,
+    status: 'success',
+    error: null,
+  })
   locationApiMocks.listLocationProvinces.mockReset().mockResolvedValue(provinces)
   locationApiMocks.listLocationDistricts.mockReset().mockImplementation(
     (provinceId: number) => Promise.resolve(districtsByProvince[provinceId] ?? []),
@@ -196,23 +323,18 @@ beforeEach(() => {
   locationApiMocks.listLocationWards.mockReset().mockImplementation(
     (districtId: number) => Promise.resolve(wardsByDistrict[districtId] ?? []),
   )
-  cartApiMocks.getCustomerCart.mockReset().mockResolvedValue({
-    id: 1,
-    branch: { id: 6, name: 'Mizuki Vĩnh Long', address: 'Vĩnh Long' },
-    totalQuantity: 1,
-    totalAmount: 100000,
-    discountAmount: 0,
-    totalAfterDiscount: 100000,
-    items: [{
-      id: 1,
-      product: { id: 1, name: 'Sản phẩm kiểm thử', slug: 'san-pham-kiem-thu' },
-      variant: { id: 1, name: 'Mặc định', sku: 'SKU-1', effectivePrice: 100000 },
-      quantity: 1,
-      subtotal: 100000,
-      availableQuantity: 5,
-      stockWarning: false,
-    }],
-  })
+  cartApiMocks.getCustomerCart.mockReset().mockResolvedValue(structuredClone(serverCart))
+  cartApiMocks.addCartItem.mockReset()
+  cartApiMocks.updateCartItem.mockReset()
+  cartApiMocks.removeCartItem.mockReset()
+  cartApiMocks.selectCartBranch.mockReset().mockResolvedValue(structuredClone(serverCart))
+  shippingApiMocks.getCustomerShippingQuote.mockReset().mockImplementation(
+    async (addressId: number) => ({
+      ...shippingQuote,
+      quoteToken: addressId === 18 ? quoteToken18 : quoteToken17,
+    }),
+  )
+  orderApiMocks.createCustomerOrder.mockReset().mockResolvedValue({ ...createdOrder })
   serverAddresses = [...savedAddresses]
   addressApiMocks.getCustomerAddresses.mockReset().mockImplementation(
     async () => [...serverAddresses],
@@ -254,6 +376,8 @@ afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  window.sessionStorage.clear()
+  window.localStorage.removeItem(BRANCH_PREFERENCE_KEY)
 })
 
 describe('customer checkout foundation', () => {
@@ -262,6 +386,12 @@ describe('customer checkout foundation', () => {
 
     expect(router.currentRoute.value.path).toBe('/checkout')
     expect(wrapper.get('[data-checkout-page] h1').text()).toBe('Thanh toán')
+    expect(wrapper.get('[data-checkout-page] h1').classes()).toEqual(
+      expect.arrayContaining(['text-body-lg', 'font-semibold']),
+    )
+    expect(wrapper.get('a[aria-label="Trở lại giỏ hàng"]').classes()).toEqual(
+      expect.arrayContaining(['size-9', 'rounded-lg']),
+    )
     expect(wrapper.find('[data-checkout-layout]').exists()).toBe(true)
   }, 10_000)
 
@@ -538,6 +668,8 @@ describe('customer checkout foundation', () => {
     expect(document.querySelector('[data-address-dialog]')).toBeNull()
     expect(wrapper.get('[data-selected-address]').text()).toContain('Nguyễn Minh Anh')
     expect(wrapper.get('[data-place-order-desktop]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-saved-address-account]').classes()).toContain('text-blue-600')
+    expect(wrapper.get('[data-saved-address-account] svg').classes()).toContain('text-blue-600')
   })
 
   it('changes the selected saved address and can open the add-another form', async () => {
@@ -638,43 +770,164 @@ describe('customer checkout foundation', () => {
     expect(document.querySelector<HTMLInputElement>('input[value="17"]')).not.toBeNull()
   })
 
-  it('switches between delivery and pickup and makes pickup shipping free', async () => {
+  it('begins with the delivery address without a fulfillment selector', async () => {
     const { wrapper } = await mountCheckout('existing')
 
     expect(wrapper.find('[data-delivery-section]').exists()).toBe(true)
-    expect(wrapper.get('[data-total-shipping]').text()).toContain('30.000')
-    await wrapper.get('[data-fulfillment="pickup"]').trigger('click')
-
-    expect(wrapper.find('[data-delivery-section]').exists()).toBe(false)
-    expect(wrapper.find('[data-pickup-section]').exists()).toBe(true)
-    expect(wrapper.get('[data-total-shipping]').text()).toBe('Miễn phí')
-    expect(wrapper.get('[data-selected-payment]').text()).toBe('Thanh toán tại chi nhánh')
+    expect(wrapper.find('[data-delivery-only]').exists()).toBe(false)
+    expect(wrapper.find('[role="radiogroup"][aria-label="Cách nhận hàng"]').exists()).toBe(false)
+    expect(wrapper.get('[data-total-shipping]').text()).toContain('42.000')
+    expect(wrapper.text()).not.toContain('Nhận tại chi nhánh')
+    expect(wrapper.find('[data-pickup-section]').exists()).toBe(false)
+    expect(wrapper.find('[data-fulfillment="pickup"]').exists()).toBe(false)
+    expect(shippingApiMocks.getCustomerShippingQuote).toHaveBeenCalledWith(17)
+    expect(serverCart.branch.name).toBe('Mizuki Vĩnh Long')
   })
 
-  it('renders at least four pickup branches and disables an invalid branch', async () => {
-    const { wrapper } = await mountCheckout('existing')
-    await wrapper.get('[data-fulfillment="pickup"]').trigger('click')
-
-    expect(wrapper.findAll('[data-branch-id]')).toHaveLength(4)
-    expect(wrapper.get('[data-branch-id="binh-thuy"] input').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-branch-id="binh-thuy"]').text()).toContain('Thiếu 1 sản phẩm')
-  })
-
-  it('changes the selected shipping method and updates its fee', async () => {
+  it('requests one GHN quote and preserves its backend fields', async () => {
     const { wrapper } = await mountCheckout('existing')
 
-    await wrapper.get<HTMLInputElement>('[data-shipping-option="express"] input').setValue(true)
-
-    expect(wrapper.get('[data-total-shipping]').text()).toContain('55.000')
+    expect(shippingApiMocks.getCustomerShippingQuote).toHaveBeenCalledWith(17)
+    expect(wrapper.find('[data-shipping-option]').exists()).toBe(false)
+    expect(wrapper.get('[data-shipping-quote-success]').text()).toContain('Dự kiến nhận hàng: 27/08/2026')
+    expect(wrapper.get('[data-shipping-quote-success]').text()).toContain('42.000')
+    expect(wrapper.get('[data-shipping-quote-success]').attributes('data-quote-token'))
+      .toBe(quoteToken17)
+    expect(wrapper.get('[data-shipping-quote-success]').attributes('data-quote-expires-at'))
+      .toBe('2099-08-25T12:00:00Z')
+    expect(wrapper.get('[data-delivery-truck-icon]').classes().some((className) =>
+      /animate|pulse|bounce|blink/.test(className),
+    )).toBe(false)
+    expect(wrapper.get('[data-delivery-truck-icon]').element.parentElement?.classList.contains('text-primary-700')).toBe(true)
+    expect(wrapper.get('[data-delivery-policies]').text())
+      .toContain('Nhận tối đa 15.000đ nếu đơn hàng giao trễ')
+    expect(wrapper.get('[data-inspection-policy]').text()).toContain('Được đồng kiểm')
+    await wrapper.get('[data-inspection-policy] summary').trigger('click')
+    expect(wrapper.get('[data-inspection-policy]').text()).toContain('đối chiếu sản phẩm')
   })
 
-  it('renders selected products without quantity editing and links corrections to Cart', async () => {
+  it('shows a complete fallback when GHN returns a null expected delivery time', async () => {
+    shippingApiMocks.getCustomerShippingQuote.mockResolvedValueOnce({
+      ...shippingQuote,
+      expectedDeliveryTime: null,
+    })
+    const { wrapper } = await mountCheckout('existing')
+
+    expect(wrapper.get('[data-expected-delivery-fallback]').text())
+      .toBe('Ngày nhận hàng dự kiến đang được cập nhật')
+    expect(wrapper.get('[data-shipping-quote-success]').text())
+      .not.toContain('Dự kiến nhận hàng:')
+  })
+
+  it('refetches the shipping quote when the selected address changes', async () => {
+    const { wrapper } = await mountCheckout('existing')
+    shippingApiMocks.getCustomerShippingQuote.mockClear()
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('input[value="18"]')?.click()
+    findDocumentButton('Dùng địa chỉ này').click()
+    await flushPromises()
+
+    expect(shippingApiMocks.getCustomerShippingQuote).toHaveBeenCalledWith(18)
+  })
+
+  it('shows shipping quote errors and retries successfully', async () => {
+    shippingApiMocks.getCustomerShippingQuote
+      .mockRejectedValueOnce(new Error('GHN tạm thời không phản hồi.'))
+      .mockResolvedValueOnce({ ...shippingQuote })
+    await mountCheckout('existing')
+
+    expect(document.querySelector('[data-shipping-quote-error]')?.textContent)
+      .toContain('GHN tạm thời không phản hồi.')
+    findDocumentButton('Thử lấy lại báo giá').click()
+    await flushPromises()
+
+    expect(shippingApiMocks.getCustomerShippingQuote).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[data-shipping-quote-success]')).not.toBeNull()
+  })
+
+  it('shows a shipping quote loading state', async () => {
+    shippingApiMocks.getCustomerShippingQuote.mockReturnValueOnce(
+      new Promise(() => undefined),
+    )
+    await mountCheckout('existing')
+
+    expect(document.querySelector('[data-shipping-quote-loading]')).not.toBeNull()
+    expect(document.querySelector<HTMLButtonElement>('[data-place-order-desktop]')?.disabled)
+      .toBe(true)
+  })
+
+  it('shows an expired quote and replaces it on refetch', async () => {
+    shippingApiMocks.getCustomerShippingQuote
+      .mockResolvedValueOnce({ ...shippingQuote, expiresAt: '2020-01-01T00:00:00Z' })
+      .mockResolvedValueOnce({ ...shippingQuote, quoteToken: quoteToken18 })
+    await mountCheckout('existing')
+
+    expect(document.querySelector('[data-shipping-quote-expired]')).not.toBeNull()
+    findDocumentButton('Cập nhật báo giá').click()
+    await flushPromises()
+
+    expect(document.querySelector('[data-shipping-quote-success]')?.getAttribute('data-quote-token'))
+      .toBe(quoteToken18)
+  })
+
+  it('renders brand, product name, quantity, unit price, and line total without variant duplication', async () => {
     const { wrapper } = await mountCheckout('existing')
 
     expect(wrapper.findAll('[data-checkout-products] article')).toHaveLength(2)
-    expect(wrapper.get('[data-checkout-products]').text()).toContain('SL 2')
+    expect(wrapper.get('[data-checkout-products]').text()).toContain('Toàn bộ giỏ hàng')
+    expect(wrapper.get('[data-checkout-products]').text()).toContain('Sữa rửa mặt thật')
+    expect(wrapper.get('[data-checkout-products]').text()).toContain('La Roche-Posay')
+    expect(wrapper.findAll('[data-product-brand]')).toHaveLength(1)
+    expect(wrapper.get('[data-checkout-products]').text()).not.toContain('SKU-71')
+    expect(wrapper.get('[data-checkout-products]').text()).not.toContain('SKU-72')
+    expect(wrapper.get('[data-checkout-products]').text()).not.toContain('50ml')
+    expect(wrapper.get('[data-checkout-products]').text()).not.toContain('30ml')
+    expect(wrapper.get('[data-checkout-products]').text()).toContain('Số lượng: 2')
+    expect(wrapper.get('[data-checkout-products]').text()).not.toContain('Sẵn sàng đặt hàng')
+    expect(wrapper.get('[data-checkout-products]').text()).toContain('100.000')
+    expect(wrapper.get('[data-checkout-products]').text()).toContain('200.000')
     expect(wrapper.find('[data-checkout-products] [data-cart-quantity]').exists()).toBe(false)
     expect(wrapper.get('[data-checkout-products] a').attributes('href')).toBe('/cart')
+    expect(wrapper.findAll('[data-checkout-product-image]')).toHaveLength(1)
+    expect(wrapper.get<HTMLImageElement>('[data-checkout-product-image]').attributes('src'))
+      .toBe('https://cdn.mizuki.test/products/cleanser.webp')
+    expect(wrapper.findAll('[data-checkout-product-fallback]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-checkout-products] h3')[0]?.classes()).toEqual(
+      expect.arrayContaining(['break-words', '[overflow-wrap:anywhere]']),
+    )
+
+    await wrapper.get('[data-checkout-product-image]').trigger('error')
+    expect(wrapper.find('[data-checkout-product-image]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-checkout-product-fallback]')).toHaveLength(2)
+  })
+
+  it('omits the brand line when the server brandName is null', async () => {
+    const { wrapper } = await mountCheckout('existing')
+    const productRows = wrapper.findAll('[data-checkout-products] article')
+
+    expect(productRows[0]?.get('[data-product-brand]').text()).toBe('La Roche-Posay')
+    expect(productRows[1]?.find('[data-product-brand]').exists()).toBe(false)
+    expect(productRows[1]?.text()).toContain('Serum thật')
+    expect(productRows[1]?.text()).toContain('Số lượng: 1')
+  })
+
+  it('blocks checkout when the active branch and cart branch do not match', async () => {
+    const { wrapper } = await mountCheckout('existing')
+    useBranchPreferenceStore(pinia).$patch({ selectedBranchId: 5 })
+    await nextTick()
+
+    expect(wrapper.get('[data-checkout-branch-error]').text()).toContain('không khớp')
+    expect(wrapper.get('[data-place-order-desktop]').attributes('disabled')).toBeDefined()
+  })
+
+  it('blocks checkout when no active branch is selected', async () => {
+    const { wrapper } = await mountCheckout('existing')
+    useBranchPreferenceStore(pinia).$patch({ selectedBranchId: null })
+    await nextTick()
+
+    expect(wrapper.get('[data-checkout-branch-error]').text()).toContain('Chưa chọn chi nhánh')
+    expect(wrapper.get('[data-place-order-desktop]').attributes('disabled')).toBeDefined()
   })
 
   it('blocks ordering for unavailable products and shows a correction warning', async () => {
@@ -685,168 +938,364 @@ describe('customer checkout foundation', () => {
     expect(wrapper.get('[data-place-order-desktop]').attributes('disabled')).toBeDefined()
   })
 
-  it('opens and closes the accessible voucher dialog with all local examples', async () => {
-    const { wrapper } = await mountCheckout('existing')
-
-    await wrapper.findAll('button').find((button) => button.text() === 'Chọn voucher')?.trigger('click')
-    await nextTick()
-    expect(document.querySelectorAll('[data-voucher-id]')).toHaveLength(5)
-    expect(document.querySelector('[data-voucher-dialog]')).not.toBeNull()
-
-    document.querySelector<HTMLButtonElement>('button[aria-label="Đóng chọn voucher"]')?.click()
-    await nextTick()
-    expect(document.querySelector('[data-voucher-dialog]')?.closest('[role="dialog"]')?.getAttribute('data-state')).toBe('closed')
-  })
-
-  it('applies eligible order and shipping vouchers and updates totals', async () => {
-    const { wrapper } = await mountCheckout('existing')
-
-    await wrapper.findAll('button').find((button) => button.text() === 'Chọn voucher')?.trigger('click')
-    await nextTick()
-    document.querySelector<HTMLInputElement>('[data-voucher-id="order-50"] input')?.click()
-    document.querySelector<HTMLInputElement>('[data-voucher-id="shipping-free"] input')?.click()
-    await nextTick()
-    findDocumentButton('Xác nhận voucher').click()
-    await nextTick()
-
-    expect(wrapper.get('[data-total-order-voucher]').text()).toContain('50.000')
-    expect(wrapper.get('[data-total-shipping-discount]').text()).toContain('30.000')
-    expect(wrapper.get('[data-selected-voucher]').text()).toContain('Giảm 50.000')
-  })
-
-  it('keeps ineligible vouchers disabled and removes applied vouchers cleanly', async () => {
+  it('selects, replaces, and removes centralized sample vouchers without changing totals', async () => {
     const { wrapper } = await mountCheckout('existing')
     const totalBefore = wrapper.get('[data-total]').text()
 
-    await wrapper.get('[data-checkout-voucher-card] button').trigger('click')
+    expect(wrapper.get('[data-voucher-empty]').text()).toContain('Chưa chọn voucher mẫu')
+    expect(wrapper.get('[data-voucher-empty]').classes()).toEqual(
+      expect.arrayContaining(['border-blue-200', 'bg-blue-50']),
+    )
+    await wrapper.get('[data-open-voucher-dialog]').trigger('click')
     await nextTick()
-    expect(document.querySelector<HTMLInputElement>('[data-voucher-id="order-premium"] input')?.disabled).toBe(true)
-    document.querySelector<HTMLInputElement>('[data-voucher-id="order-50"] input')?.click()
-    await nextTick()
+    expect(document.querySelector('[data-voucher-dialog]')).not.toBeNull()
+
+    const orderInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="order-voucher"]')]
+    const firstOrder = orderInputs.find((input) => !input.disabled)
+    const shippingLabels = [...document.querySelectorAll<HTMLLabelElement>('[data-voucher-dialog] label')]
+    const freeShippingLabel = shippingLabels.find((label) => label.textContent?.includes('Miễn phí vận chuyển'))
+    const freeShippingInput = freeShippingLabel?.querySelector<HTMLInputElement>('input[name="shipping-voucher"]')
+    expect(firstOrder).toBeDefined()
+    expect(freeShippingInput).not.toBeNull()
+    expect(freeShippingInput?.disabled).toBe(false)
+    firstOrder?.click()
+    freeShippingInput?.click()
     findDocumentButton('Xác nhận voucher').click()
     await nextTick()
 
-    await wrapper.get('[data-checkout-voucher-card] button').trigger('click')
-    await nextTick()
-    findDocumentButton('Bỏ voucher đơn hàng').click()
-    await nextTick()
-    findDocumentButton('Xác nhận voucher').click()
-    await nextTick()
+    expect(wrapper.get('[data-selected-order-voucher]').classes()).toEqual(
+      expect.arrayContaining(['border-blue-300', 'bg-blue-50']),
+    )
+    expect(wrapper.get('[data-selected-shipping-voucher]').text()).toContain('Miễn phí vận chuyển')
+    expect(wrapper.get('[data-selected-order-voucher]').text()).toContain('Đơn tối thiểu')
+    expect(wrapper.get('[data-open-voucher-dialog]').text()).toBe('Đổi voucher')
+    const firstOrderCode = wrapper.get('[data-selected-order-voucher]').text()
     expect(wrapper.get('[data-total]').text()).toBe(totalBefore)
+
+    await wrapper.get('[data-open-voucher-dialog]').trigger('click')
+    await nextTick()
+    const replacement = [...document.querySelectorAll<HTMLInputElement>('input[name="order-voucher"]')]
+      .find((input) => !input.disabled && input.value !== firstOrder?.value)
+    expect(replacement).toBeDefined()
+    replacement?.click()
+    findDocumentButton('Xác nhận voucher').click()
+    await nextTick()
+    expect(wrapper.get('[data-selected-order-voucher]').text()).not.toBe(firstOrderCode)
+    expect(wrapper.get('[data-total]').text()).toBe(totalBefore)
+
+    await wrapper.get('[data-remove-vouchers]').trigger('click')
+    expect(wrapper.find('[data-selected-voucher-box]').exists()).toBe(false)
+    expect(wrapper.get('[data-voucher-empty]').text()).toContain('Chưa chọn voucher mẫu')
+    expect(wrapper.get('[data-total]').text()).toBe(totalBefore)
+    expect(orderApiMocks.createCustomerOrder).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-total-order-voucher]').exists()).toBe(false)
+    expect(wrapper.find('[data-total-shipping-discount]').exists()).toBe(false)
   })
 
-  it('renders all required payments, communicates wallet insufficiency, and selects VNPay', async () => {
+  it('shows only backend-supported payment methods and clearly highlights cash', async () => {
     const { wrapper } = await mountCheckout('existing')
-    await wrapper.get('[data-checkout-payment-card] button').trigger('click')
+    expect(wrapper.get('[data-checkout-payment-card] [data-change-payment]').text()).toBe('Thay đổi')
+    await wrapper.get('[data-change-payment]').trigger('click')
     await nextTick()
 
-    expect(document.querySelectorAll('[data-payment-id]')).toHaveLength(5)
-    expect(document.querySelector('[data-payment-id="wallet"]')?.textContent).toContain('Số dư không đủ')
-    expect(document.querySelector<HTMLInputElement>('[data-payment-id="wallet"] input')?.disabled).toBe(true)
-    document.querySelector<HTMLInputElement>('[data-payment-id="vnpay"] input')?.click()
-    await nextTick()
-    findDocumentButton('Xác nhận thanh toán').click()
-    await nextTick()
-    expect(wrapper.get('[data-selected-payment]').text()).toBe('VNPay')
+    expect(document.querySelectorAll('[data-payment-id]')).toHaveLength(2)
+    const cashMethod = document.querySelector('[data-payment-id="cod"]')
+    expect(cashMethod).not.toBeNull()
+    expect(document.querySelector('[data-payment-id="wallet"]')).toBeNull()
+    expect(document.querySelector('[data-payment-id="vnpay"]')).not.toBeNull()
+    expect(document.querySelector('[data-payment-id="atm"]')).toBeNull()
+    expect(document.querySelector('[data-payment-id="card"]')).toBeNull()
+    expect(document.querySelector<HTMLInputElement>('[data-payment-id="vnpay"] input')?.disabled).toBe(true)
+    expect(cashMethod?.getAttribute('data-payment-selected')).toBe('true')
+    expect(cashMethod?.classList.contains('border-primary-600')).toBe(true)
+    expect(cashMethod?.classList.contains('bg-primary-50')).toBe(true)
+    expect(cashMethod?.querySelector('[data-payment-selected-indicator]')).not.toBeNull()
+    expect(wrapper.get('[data-selected-payment]').text()).toContain('Thanh toán khi nhận hàng')
+    expect(wrapper.find('#checkout-note').exists()).toBe(false)
   })
 
-  it('stores an optional order note locally with a character limit', async () => {
+  it('opens a confirmation with current delivery data and cancel sends no request', async () => {
     const { wrapper } = await mountCheckout('existing')
-    const note = wrapper.get<HTMLTextAreaElement>('#checkout-note')
 
-    await note.setValue('Vui lòng gọi trước khi giao.')
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    await nextTick()
 
-    expect(note.element.value).toBe('Vui lòng gọi trước khi giao.')
-    expect(note.attributes('maxlength')).toBe('300')
-    expect(wrapper.text()).toContain('28/300')
+    const confirmation = document.querySelector('[data-order-confirmation]')
+    expect(confirmation).not.toBeNull()
+    expect(confirmation?.textContent).toContain('Giao tận nơi')
+    expect(confirmation?.textContent).toContain('Nguyễn Minh Anh')
+    expect(confirmation?.textContent).toContain('48 đường 30/4')
+    expect(confirmation?.textContent).toContain('Mizuki Vĩnh Long')
+    expect(confirmation?.textContent).toContain('3 sản phẩm')
+    expect(confirmation?.textContent).toContain('Thanh toán khi nhận hàng')
+    expect(document.querySelector('[data-confirmation-total]')?.textContent).toContain('517.000')
+
+    findDocumentButton('Hủy').click()
+    await nextTick()
+    expect(document.querySelector('[data-order-confirmation]')).toBeNull()
+    expect(orderApiMocks.createCustomerOrder).not.toHaveBeenCalled()
+  })
+
+  it('submits the exact current delivery payload once and uses the real success response', async () => {
+    const emptyCart = {
+      ...structuredClone(serverCart),
+      items: [],
+      totalQuantity: 0,
+      totalAmount: 0,
+      discountAmount: 0,
+      totalAfterDiscount: 0,
+    }
+    cartApiMocks.getCustomerCart.mockReset()
+      .mockResolvedValueOnce(structuredClone(serverCart))
+      .mockResolvedValueOnce(emptyCart)
+    const { wrapper, queryClient } = await mountCheckout('existing')
+    const totalBeforeVoucher = wrapper.get('[data-total]').text()
+
+    await wrapper.get('[data-open-voucher-dialog]').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('input[name="order-voucher"]:not(:disabled)')?.click()
+    const freeShippingLabel = [...document.querySelectorAll<HTMLLabelElement>('[data-voucher-dialog] label')]
+      .find((label) => label.textContent?.includes('Miễn phí vận chuyển'))
+    freeShippingLabel?.querySelector<HTMLInputElement>('input')?.click()
+    findDocumentButton('Xác nhận voucher').click()
+    await nextTick()
+    expect(wrapper.find('[data-selected-voucher-box]').exists()).toBe(true)
+    expect(wrapper.get('[data-total]').text()).toBe(totalBeforeVoucher)
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder).toHaveBeenCalledTimes(1)
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[0]).toEqual({
+      delivery_method: 'delivery',
+      address_id: 17,
+      shipping_quote_token: quoteToken17,
+      payment_method: 'cash',
+    })
+    expect(Object.keys(orderApiMocks.createCustomerOrder.mock.calls[0]![0])).toEqual([
+      'delivery_method',
+      'address_id',
+      'shipping_quote_token',
+      'payment_method',
+    ])
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[1]).toBe(firstIdempotencyKey)
+    expect(window.sessionStorage.getItem(orderAttemptStorageKey)).toBeNull()
+    expect(document.querySelector('[data-order-success]')).not.toBeNull()
+    expect(document.querySelector('[data-success-order-number]')?.textContent)
+      .toContain('MZ-20260825-0901')
+    expect(document.querySelector('[data-success-order-total]')?.textContent).toContain('519.000')
+    expect(document.querySelector('[data-success-order-status]')?.textContent).toContain('Chờ xác nhận')
+    expect(document.querySelector('[data-order-confirmation]')).toBeNull()
+    expect(cartApiMocks.getCustomerCart).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-checkout-empty]').exists()).toBe(true)
+    expect(queryClient.getQueryData(customerShippingQuoteKeys.detail(17))).toBeUndefined()
+    expect(document.body.textContent).not.toContain('ORD-DEMO')
+  })
+
+  it('prevents duplicate confirmation while Create Order is pending', async () => {
+    orderApiMocks.createCustomerOrder.mockReturnValueOnce(new Promise(() => undefined))
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    const confirmButton = document.querySelector<HTMLButtonElement>('[data-confirm-order]')!
+    confirmButton.click()
+    confirmButton.click()
+    await nextTick()
+
+    expect(orderApiMocks.createCustomerOrder).toHaveBeenCalledTimes(1)
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[1]).toBe(firstIdempotencyKey)
+    expect(crypto.randomUUID).toHaveBeenCalledTimes(1)
+    expect(confirmButton.disabled).toBe(true)
+    expect(confirmButton.textContent).toContain('Đang đặt hàng')
+    expect(document.querySelector<HTMLButtonElement>('[data-cancel-order-confirmation]')?.disabled)
+      .toBe(true)
+  })
+
+  it('keeps and reuses the idempotency key when the same payload is retried after a network failure', async () => {
+    orderApiMocks.createCustomerOrder.mockRejectedValueOnce(new Error('Mất kết nối mạng.'))
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder).toHaveBeenCalledTimes(1)
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[1]).toBe(firstIdempotencyKey)
+    expect(window.sessionStorage.getItem(orderAttemptStorageKey)).toContain(firstIdempotencyKey)
+
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder).toHaveBeenCalledTimes(2)
+    expect(orderApiMocks.createCustomerOrder.mock.calls[1]?.[1]).toBe(firstIdempotencyKey)
+    expect(crypto.randomUUID).toHaveBeenCalledTimes(1)
+    expect(window.sessionStorage.getItem(orderAttemptStorageKey)).toBeNull()
+    expect(document.querySelector('[data-order-success]')).not.toBeNull()
+  })
+
+  it('discards the old attempt and generates a new key when the order payload changes', async () => {
+    orderApiMocks.createCustomerOrder.mockRejectedValueOnce(new Error('Mất kết nối mạng.'))
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+    findDocumentButton('Hủy').click()
+    await nextTick()
+
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('input[value="18"]')?.click()
+    findDocumentButton('Dùng địa chỉ này').click()
+    await flushPromises()
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder).toHaveBeenCalledTimes(2)
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[1]).toBe(firstIdempotencyKey)
+    expect(orderApiMocks.createCustomerOrder.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      address_id: 18,
+      shipping_quote_token: quoteToken18,
+    }))
+    expect(orderApiMocks.createCustomerOrder.mock.calls[1]?.[1]).toBe(secondIdempotencyKey)
+    expect(crypto.randomUUID).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps Checkout state and shows normalized validation errors when Create Order fails', async () => {
+    orderApiMocks.createCustomerOrder.mockRejectedValueOnce({
+      name: 'ApplicationError',
+      kind: 'validation',
+      message: 'Dữ liệu đặt hàng chưa hợp lệ.',
+      validationErrors: {
+        shipping_quote_token: ['Báo giá vận chuyển đã hết hạn.'],
+        stock: ['Sản phẩm không còn đủ số lượng.'],
+      },
+      cause: null,
+    })
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(document.querySelector('[data-order-success]')).toBeNull()
+    expect(document.querySelector('[data-order-confirmation]')).not.toBeNull()
+    expect(document.querySelector('[data-create-order-error]')?.textContent)
+      .toContain('Dữ liệu đặt hàng chưa hợp lệ.')
+    expect(document.querySelector('[data-create-order-error]')?.textContent)
+      .toContain('Báo giá vận chuyển đã hết hạn.')
+    expect(document.querySelector('[data-create-order-error]')?.textContent)
+      .toContain('Sản phẩm không còn đủ số lượng.')
+    expect(wrapper.findAll('[data-checkout-products] article')).toHaveLength(2)
+    expect(cartApiMocks.getCustomerCart).toHaveBeenCalledTimes(1)
+    expect(document.querySelector<HTMLButtonElement>('[data-confirm-order]')?.disabled).toBe(false)
+  })
+
+  it('refreshes an expired token before requiring a new confirmation', async () => {
+    const { wrapper, queryClient } = await mountCheckout('existing')
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    queryClient.setQueryData(customerShippingQuoteKeys.detail(17), {
+      ...shippingQuote,
+      expiresAt: '2020-01-01T00:00:00Z',
+    })
+    await nextTick()
+    shippingApiMocks.getCustomerShippingQuote.mockResolvedValueOnce({
+      ...shippingQuote,
+      shippingFee: 50_000,
+      quoteToken: quoteToken18,
+    })
+
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder).not.toHaveBeenCalled()
+    expect(shippingApiMocks.getCustomerShippingQuote).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[data-order-confirmation]')).toBeNull()
+    expect(wrapper.get('[data-order-notice]').text()).toContain('Tổng dự kiến đã thay đổi')
+    expect(wrapper.get('[data-total]').text()).toContain('525.000')
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    expect(document.querySelector('[data-order-confirmation]')).not.toBeNull()
+    expect(document.querySelector('[data-confirmation-total]')?.textContent).toContain('525.000')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      address_id: 17,
+      shipping_quote_token: quoteToken18,
+    }))
   })
 
   it('calculates non-negative typed totals and saved amount', async () => {
     const { wrapper } = await mountCheckout('existing')
+    const summaryLabels = wrapper.findAll('[data-checkout-summary] dt').map((row) => row.text())
 
+    expect(summaryLabels).toEqual(['Số lượng', 'Tạm tính', 'Phí vận chuyển', 'Tiết kiệm', 'Tổng dự kiến'])
     expect(wrapper.get('[data-total-count]').text()).toBe('3')
-    expect(wrapper.get('[data-total-subtotal]').text()).toContain('513.000')
-    expect(wrapper.get('[data-total]').text()).toContain('543.000')
-    expect(wrapper.get('[data-saved-amount]').text()).toContain('Tiết kiệm')
+    expect(wrapper.get('[data-total-subtotal]').text()).toContain('500.000')
+    expect(wrapper.get('[data-total-shipping]').text()).toContain('42.000')
+    expect(wrapper.get('[data-total]').text()).toContain('517.000')
+    expect(wrapper.get('[data-saved-amount]').text()).toBe('25.000 đ')
+    expect(wrapper.text()).not.toContain('máy chủ')
+    expect(wrapper.text()).not.toContain('-0 đ')
   })
 
-  it('prevents double submission and renders the local success result', async () => {
-    vi.useFakeTimers()
-    const { wrapper } = await mountCheckout('existing')
-    const placeOrder = wrapper.get('[data-place-order-desktop]')
+  it('uses exact customer savings wording when the actual discount is zero', async () => {
+    const { wrapper } = await mountCheckout('unavailable')
 
-    await placeOrder.trigger('click')
-    await placeOrder.trigger('click')
-    expect(wrapper.get('[data-checkout-page]').attributes('data-submit-count')).toBe('1')
-    expect(placeOrder.text()).toContain('Đang đặt hàng')
-
-    await vi.advanceTimersByTimeAsync(250)
-    await nextTick()
-    expect(document.querySelector('[data-order-result]')?.getAttribute('data-result-kind')).toBe('success')
-    expect(document.body.textContent).toContain('MZK-DEMO-260731')
-    expect(document.body.textContent).toContain('Tiếp tục mua sắm')
-  })
-
-  it('renders a recoverable failure and retries without losing checkout state', async () => {
-    vi.useFakeTimers()
-    const { wrapper } = await mountCheckout('failure')
-    await wrapper.get<HTMLTextAreaElement>('#checkout-note').setValue('Giữ nguyên ghi chú')
-    await wrapper.get('[data-place-order-desktop]').trigger('click')
-    await vi.advanceTimersByTimeAsync(250)
-    await nextTick()
-
-    expect(document.querySelector('[data-order-result]')?.getAttribute('data-result-kind')).toBe('failure')
-    findDocumentButton('Thử đặt hàng lại').click()
-    await nextTick()
-    expect(document.querySelector('[data-order-result]')).toBeNull()
-    expect(wrapper.get<HTMLTextAreaElement>('#checkout-note').element.value).toBe('Giữ nguyên ghi chú')
-  })
-
-  it('selects a local result scenario without relying on a URL or network request', async () => {
-    const { wrapper } = await mountCheckout('existing')
-    const resultScenario = wrapper.get<HTMLSelectElement>('[data-checkout-result-scenario]')
-
-    await resultScenario.setValue('failure')
-
-    expect(resultScenario.element.value).toBe('failure')
+    expect(wrapper.get('[data-saved-amount]').text()).toBe('0 đ')
+    expect(wrapper.text()).not.toContain('-0 đ')
+    expect(wrapper.text()).not.toContain('máy chủ')
   })
 
   it.each([
     ['loading', '[data-checkout-loading]'],
     ['empty', '[data-checkout-empty]'],
     ['error', '[data-checkout-error]'],
-  ] as const)('renders the local %s checkout state', async (scenario, selector) => {
+  ] as const)('renders the server cart %s state', async (scenario, selector) => {
     const { wrapper } = await mountCheckout(scenario)
 
     expect(wrapper.find(selector).exists()).toBe(true)
     if (scenario === 'empty') expect(wrapper.find('[data-checkout-summary]').exists()).toBe(false)
   })
 
-  it('keeps desktop and mobile checkout layout contracts without utility overlap', async () => {
+  it.each([
+    [1440, 900],
+    [1024, 1366],
+    [768, 1024],
+    [390, 844],
+  ])('keeps checkout layout contracts at %i×%i', async (width, height) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+    window.dispatchEvent(new Event('resize'))
     const { wrapper } = await mountCheckout('existing')
     const layout = wrapper.get('[data-checkout-layout]')
-    const summary = wrapper.get('[data-checkout-summary]')
+    const sidebarStack = wrapper.get('[data-checkout-sidebar-stack]')
     const mobileBar = wrapper.get('[data-mobile-order-bar]')
+    const sidebarChildren = [...sidebarStack.element.children]
 
-    expect(layout.classes()).toContain('lg:grid-cols-[minmax(0,1fr)_22rem]')
-    expect(summary.classes()).toEqual(expect.arrayContaining(['lg:sticky', 'lg:top-36']))
+    expect(layout.classes()).toContain('lg:grid-cols-[minmax(0,1fr)_21rem]')
+    expect(sidebarStack.classes()).toEqual(expect.arrayContaining(['grid', 'gap-3', 'lg:sticky', 'lg:top-28']))
+    expect(sidebarChildren[0]?.hasAttribute('data-checkout-voucher-card')).toBe(true)
+    expect(sidebarChildren[1]?.hasAttribute('data-checkout-payment-card')).toBe(true)
+    expect(sidebarChildren[2]?.hasAttribute('data-checkout-summary')).toBe(true)
     expect(mobileBar.classes()).toEqual(expect.arrayContaining(['fixed', 'bottom-[5.75rem]', 'md:hidden']))
     expect(mobileBar.attributes('aria-label')).toBe('Thanh đặt hàng mobile')
     expect(wrapper.find('[data-customer-voucher-float]').exists()).toBe(false)
     expect(wrapper.find('[data-customer-back-to-top]').exists()).toBe(false)
   })
 
-  it('uses no external images, network request, or any type in checkout implementation', async () => {
+  it('uses no external images, direct browser request, or any type in checkout implementation', async () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
     const openSpy = vi.spyOn(XMLHttpRequest.prototype, 'open')
     const { wrapper } = await mountCheckout('existing')
 
-    await wrapper.get('[data-fulfillment="pickup"]').trigger('click')
-    await wrapper.get('[data-fulfillment="delivery"]').trigger('click')
-
+    const checkoutSource = readFileSync('src/pages/customer/CheckoutPage.vue', 'utf8')
     const source = [
-      readFileSync('src/pages/customer/CheckoutPage.vue', 'utf8'),
+      checkoutSource,
       readFileSync('src/components/checkout/CheckoutAddressDialog.vue', 'utf8'),
       readFileSync('src/components/checkout/CheckoutVoucherDialog.vue', 'utf8'),
       readFileSync('src/components/checkout/CheckoutPaymentDialog.vue', 'utf8'),
@@ -857,10 +1306,15 @@ describe('customer checkout foundation', () => {
       'utf8',
     )
 
-    expect(wrapper.findAll('img[src^="http"]')).toHaveLength(0)
+    expect(wrapper.findAll('img[src^="http"]')).toHaveLength(1)
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(openSpy).not.toHaveBeenCalled()
     expect(source).not.toMatch(/\bany\b/)
+    expect(checkoutSource).not.toMatch(/createCheckoutScenario|CheckoutOrderResult|data-order-result/)
+    expect(checkoutSource).not.toMatch(/pickup|Nhận tại chi nhánh|variant\.sku/)
+    expect(checkoutSource).not.toMatch(/data-delivery-only/)
+    expect(checkoutSource).not.toMatch(/(?:animate|pulse|bounce|blink)[^>]*data-delivery-truck-icon|data-delivery-truck-icon[^>]*(?:animate|pulse|bounce|blink)/)
+    expect(checkoutSource).not.toMatch(/item\.variant\.name/)
     expect(addressDialogSource).not.toMatch(/apiClient|axios|ENDPOINTS|\/api\/v1\/locations/)
   })
 })

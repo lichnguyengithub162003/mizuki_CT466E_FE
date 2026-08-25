@@ -21,6 +21,8 @@ export const ENDPOINTS = {
   customerAddress: (addressId: string) => `/customer/addresses/${addressId}`,
   customerAddressDefault: (addressId: string) =>
     `/customer/addresses/${addressId}/default`,
+  customerShippingQuote: '/customer/shipping/quote',
+  customerOrders: '/customer/orders',
   branches: '/branches',
   products: '/products',
 } as const

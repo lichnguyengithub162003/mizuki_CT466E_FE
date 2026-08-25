@@ -2,205 +2,390 @@
 import {
   AlertTriangle,
   BadgeCheck,
+  Banknote,
+  CheckCircle2,
   ChevronLeft,
-  Clock3,
+  Info,
+  PackageCheck,
   PackageOpen,
-  Store,
+  Sparkles,
   Tag,
   Truck,
-  WalletCards,
-} from '@lucide/vue'
-import { computed, onUnmounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+} from "@lucide/vue";
+import { useQueryClient } from "@tanstack/vue-query";
+import { computed, nextTick, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import {
   CheckoutAddressDialog,
   CheckoutPaymentDialog,
   CheckoutVoucherDialog,
-} from '@/components/checkout'
-import BaseDialog from '@/components/common/BaseDialog.vue'
-import { ROUTE_NAMES } from '@/constants/routes'
+} from "@/components/checkout";
+import { ROUTE_NAMES } from "@/constants/routes";
 import {
-  checkoutBranches,
   emptyCheckoutAddressDraft,
   checkoutPaymentMethods,
-  checkoutShippingOptions,
   checkoutVouchers,
-  createCheckoutScenario,
-} from '@/data/customer/checkoutDemoData'
-import CustomerLayout from '@/layouts/CustomerLayout.vue'
+} from "@/data/customer/checkoutDemoData";
+import CustomerLayout from "@/layouts/CustomerLayout.vue";
 import {
   useCreateCustomerAddressMutation,
   useCustomerAddressesQuery,
   useDeleteCustomerAddressMutation,
   useSetDefaultCustomerAddressMutation,
   useUpdateCustomerAddressMutation,
-} from '@/queries/addresses'
-import { useAuthStore } from '@/stores/auth'
-import { pinia } from '@/stores/pinia'
+} from "@/queries/addresses";
+import { useCustomerCartQuery } from "@/queries/cart";
+import { useCreateCustomerOrderMutation } from "@/queries/orders";
+import {
+  customerShippingQuoteKeys,
+  useCustomerShippingQuoteQuery,
+} from "@/queries/shipping";
+import { useAuthStore } from "@/stores/auth";
+import { useBranchPreferenceStore } from "@/stores/branchPreference";
+import { pinia } from "@/stores/pinia";
 import type {
   CheckoutAddress,
   CheckoutAddressDraft,
-  CheckoutOrderResult,
   CheckoutScenario,
-  CheckoutTotals,
-  CheckoutVoucher,
-  FulfillmentMethod,
-} from '@/types/customer'
-import { customerAddressFormErrors } from '@/types/addresses'
-import type { ApiValidationErrors } from '@/types/api'
-import { cn } from '@/utils/cn'
+} from "@/types/customer";
+import { customerAddressFormErrors } from "@/types/addresses";
+import type { ApiValidationErrors } from "@/types/api";
+import type {
+  CreateCustomerOrderRequest,
+  CreatedCustomerOrder,
+} from "@/types/orders";
 
 const props = defineProps<{
-  scenario?: CheckoutScenario
-}>()
+  scenario?: CheckoutScenario;
+}>();
 
-const scenarioData = createCheckoutScenario(props.scenario ?? 'existing')
-const authStore = useAuthStore(pinia)
-const userId = computed(() => authStore.user?.id ?? null)
-const viewState = ref(scenarioData.viewState)
-const addresses = ref<CheckoutAddress[]>([])
-const products = ref([...scenarioData.products])
-const selectedAddressId = ref(addresses.value[0]?.id ?? '')
-const addressDraft = ref<CheckoutAddressDraft>({ ...emptyCheckoutAddressDraft })
-const addressDialogOpen = ref(false)
-const addressDialogStartInForm = ref(false)
-const voucherDialogOpen = ref(false)
-const paymentDialogOpen = ref(false)
-const fulfillment = ref<FulfillmentMethod>('delivery')
-const selectedShippingId = ref(checkoutShippingOptions[0]!.id)
-const selectedBranchId = ref(checkoutBranches.find((branch) => branch.available)?.id ?? '')
-const orderVoucherId = ref('')
-const shippingVoucherId = ref('')
-const paymentMethodId = ref(checkoutPaymentMethods.find((method) => method.available)?.id ?? '')
-const orderNote = ref('')
-const isSubmitting = ref(false)
-const submitCount = ref(0)
-const result = ref<CheckoutOrderResult | null>(null)
-const resultDialogOpen = ref(false)
-const nextResultKind = ref(scenarioData.result)
-const orderPlaceholderVisible = ref(false)
-let submitTimer: number | undefined
+const authStore = useAuthStore(pinia);
+const branchStore = useBranchPreferenceStore(pinia);
+const queryClient = useQueryClient();
+const userId = computed(() => authStore.user?.id ?? null);
+const addresses = ref<CheckoutAddress[]>([]);
+const selectedAddressId = ref(addresses.value[0]?.id ?? "");
+const addressDraft = ref<CheckoutAddressDraft>({
+  ...emptyCheckoutAddressDraft,
+});
+const addressDialogOpen = ref(false);
+const addressDialogStartInForm = ref(false);
+const paymentDialogOpen = ref(false);
+const voucherDialogOpen = ref(false);
+const selectedOrderVoucherId = ref("");
+const selectedShippingVoucherId = ref("");
+const supportedCheckoutPaymentMethods = checkoutPaymentMethods
+  .filter((method) => ["cod", "vnpay"].includes(method.id))
+  .map((method) => {
+    if (method.id === "cod") return method;
+    return {
+      ...method,
+      available: false,
+      unavailableReason: "Thanh toán VNPay đang được cập nhật.",
+    };
+  });
+const paymentMethodId = ref(
+  supportedCheckoutPaymentMethods.find((method) => method.id === "cod")?.id ??
+    "",
+);
+const failedProductImageIds = ref<ReadonlySet<number>>(new Set<number>());
+const confirmationDialogOpen = ref(false);
+const confirmationSnapshot = ref<OrderConfirmationSnapshot | null>(null);
+const createdOrder = ref<CreatedCustomerOrder | null>(null);
+const orderNotice = ref("");
+const orderSucceeded = ref(false);
+const ORDER_ATTEMPT_STORAGE_PREFIX = "mizuki:checkout:create-order-attempt";
 
-const addressesQuery = useCustomerAddressesQuery(userId)
-const createAddressMutation = useCreateCustomerAddressMutation(userId)
-const updateAddressMutation = useUpdateCustomerAddressMutation(userId)
-const setDefaultAddressMutation = useSetDefaultCustomerAddressMutation(userId)
-const deleteAddressMutation = useDeleteCustomerAddressMutation(userId)
+interface OrderConfirmationSnapshot {
+  readonly addressId: number;
+  readonly quoteToken: string;
+  readonly expectedTotal: number;
+}
+
+type DeliveryOrderPayload = Extract<
+  CreateCustomerOrderRequest,
+  { readonly delivery_method: "delivery" }
+>;
+
+interface CheckoutOrderAttempt {
+  readonly fingerprint: string;
+  readonly idempotencyKey: string;
+}
+
+const orderAttempt = ref<CheckoutOrderAttempt | null>(null);
+
+const addressesQuery = useCustomerAddressesQuery(userId);
+const createAddressMutation = useCreateCustomerAddressMutation(userId);
+const updateAddressMutation = useUpdateCustomerAddressMutation(userId);
+const setDefaultAddressMutation = useSetDefaultCustomerAddressMutation(userId);
+const deleteAddressMutation = useDeleteCustomerAddressMutation(userId);
+const cartQuery = useCustomerCartQuery(userId);
+const createOrderMutation = useCreateCustomerOrderMutation();
+const cart = computed(() => cartQuery.data.value);
+const cartItems = computed(() => cart.value?.items ?? []);
+const cartBranch = computed(() => cart.value?.branch);
+const branchMatchesCart = computed(() =>
+  Boolean(
+    cartBranch.value &&
+    branchStore.selectedBranchId !== null &&
+    cartBranch.value.id === branchStore.selectedBranchId,
+  ),
+);
 
 watch(
-  () => addressesQuery.data.value,
-  (serverAddresses) => {
-    if (!serverAddresses) return
-    addresses.value = [...serverAddresses]
+  [() => addressesQuery.data.value, cartItems],
+  ([serverAddresses, serverCartItems]) => {
+    if (!serverAddresses) return;
+    addresses.value = [...serverAddresses];
     const currentStillExists = serverAddresses.some(
       (address) => address.id === selectedAddressId.value,
-    )
+    );
     if (!currentStillExists) {
-      selectedAddressId.value = serverAddresses.find((address) => address.isDefault)?.id
-        ?? serverAddresses[0]?.id
-        ?? ''
+      selectedAddressId.value =
+        serverAddresses.find((address) => address.isDefault)?.id ??
+        serverAddresses[0]?.id ??
+        "";
     }
-    if (
-      serverAddresses.length === 0
-      && viewState.value === 'success'
-      && products.value.length > 0
-    ) {
-      addressDraft.value = { ...emptyCheckoutAddressDraft, isDefault: true }
-      addressDialogStartInForm.value = true
-      addressDialogOpen.value = true
+    if (serverAddresses.length === 0 && serverCartItems.length > 0) {
+      addressDraft.value = { ...emptyCheckoutAddressDraft, isDefault: true };
+      addressDialogStartInForm.value = true;
+      addressDialogOpen.value = true;
     }
   },
   { immediate: true },
-)
+);
 
-const currencyFormatter = new Intl.NumberFormat('vi-VN', {
-  style: 'currency',
-  currency: 'VND',
-})
+const currencyFormatter = new Intl.NumberFormat("vi-VN", {
+  style: "currency",
+  currency: "VND",
+});
+const numberFormatter = new Intl.NumberFormat("vi-VN");
 
-const selectedAddress = computed(
-  () => addresses.value.find((address) => address.id === selectedAddressId.value),
-)
-const selectedShipping = computed(
-  () => checkoutShippingOptions.find((option) => option.id === selectedShippingId.value)
-    ?? checkoutShippingOptions[0]!,
-)
-const selectedBranch = computed(
-  () => checkoutBranches.find((branch) => branch.id === selectedBranchId.value),
-)
-const selectedPayment = computed(
-  () => checkoutPaymentMethods.find((method) => method.id === paymentMethodId.value),
-)
-const selectedOrderVoucher = computed(
-  () => checkoutVouchers.find((voucher) => voucher.id === orderVoucherId.value),
-)
-const selectedShippingVoucher = computed(
-  () => checkoutVouchers.find((voucher) => voucher.id === shippingVoucherId.value),
-)
-const hasUnavailableProduct = computed(() => products.value.some((product) => !product.available))
-const shippingFee = computed(
-  () => fulfillment.value === 'pickup' ? 0 : selectedShipping.value.fee,
-)
-
-function calculateVoucherDiscount(
-  voucher: CheckoutVoucher | undefined,
-  eligibilityBasis: number,
-  discountBasis: number,
-): number {
-  if (!voucher || eligibilityBasis < voucher.minimumOrder) return 0
-  if (voucher.discountType === 'fixed') return Math.min(voucher.discountValue, discountBasis)
-  const percentageDiscount = Math.round(discountBasis * voucher.discountValue / 100)
-  return Math.min(
-    percentageDiscount,
-    voucher.maximumDiscount ?? percentageDiscount,
-    discountBasis,
-  )
+function formatSavings(amount: number): string {
+  return `${numberFormatter.format(Math.max(amount, 0))} đ`;
 }
 
-const totals = computed<CheckoutTotals>(() => {
-  const subtotal = products.value.reduce(
-    (sum, product) => sum + product.unitPrice * product.quantity,
-    0,
-  )
-  const productDiscount = products.value.reduce(
-    (sum, product) =>
-      sum + Math.max((product.originalUnitPrice ?? product.unitPrice) - product.unitPrice, 0)
-        * product.quantity,
-    0,
-  )
-  const orderVoucherDiscount = calculateVoucherDiscount(
-    selectedOrderVoucher.value,
-    subtotal,
-    subtotal,
-  )
-  const shippingVoucherDiscount = fulfillment.value === 'delivery'
-    ? calculateVoucherDiscount(selectedShippingVoucher.value, subtotal, shippingFee.value)
-    : 0
-  const total = Math.max(
-    subtotal - orderVoucherDiscount + shippingFee.value - shippingVoucherDiscount,
-    0,
-  )
+function formatExpectedDeliveryDate(value: string | null): string | null {
+  const normalized = value?.trim();
+  if (!normalized) return null;
+
+  const vietnameseDate = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (vietnameseDate) return normalized;
+
+  const isoDate = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+
+  const parsed = new Date(normalized);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Asia/Ho_Chi_Minh",
+  }).format(parsed);
+}
+
+const selectedAddress = computed(() =>
+  addresses.value.find((address) => address.id === selectedAddressId.value),
+);
+const shippingAddressId = computed(() => {
+  const id = Number(selectedAddress.value?.id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+});
+const shippingQuoteEnabled = computed(
+  () =>
+    !orderSucceeded.value &&
+    cartItems.value.length > 0 &&
+    shippingAddressId.value !== null &&
+    branchMatchesCart.value,
+);
+const shippingQuoteQuery = useCustomerShippingQuoteQuery(
+  shippingAddressId,
+  shippingQuoteEnabled,
+);
+function quoteHasExpired(expiresAt: string | undefined): boolean {
+  if (!expiresAt) return false;
+  const expiryTime = Date.parse(expiresAt);
+  return !Number.isFinite(expiryTime) || expiryTime <= Date.now();
+}
+
+const shippingQuoteExpired = computed(() =>
+  quoteHasExpired(shippingQuoteQuery.data.value?.expiresAt),
+);
+const expectedDeliveryDate = computed(() =>
+  formatExpectedDeliveryDate(
+    shippingQuoteQuery.data.value?.expectedDeliveryTime ?? null,
+  ),
+);
+const selectedPayment = computed(() =>
+  supportedCheckoutPaymentMethods.find(
+    (method) => method.id === paymentMethodId.value,
+  ),
+);
+const paymentPayloadValue = computed<"cash" | null>(() =>
+  paymentMethodId.value === "cod" ? "cash" : null,
+);
+const hasUnavailableProduct = computed(() =>
+  cartItems.value.some(
+    (item) => item.stockWarning || item.availableQuantity < item.quantity,
+  ),
+);
+const shippingFee = computed<number | null>(() =>
+  shippingQuoteExpired.value
+    ? null
+    : (shippingQuoteQuery.data.value?.shippingFee ?? null),
+);
+const selectedOrderVoucher = computed(() =>
+  checkoutVouchers.find(
+    (voucher) => voucher.id === selectedOrderVoucherId.value,
+  ),
+);
+const selectedShippingVoucher = computed(() =>
+  checkoutVouchers.find(
+    (voucher) => voucher.id === selectedShippingVoucherId.value,
+  ),
+);
+
+const totals = computed(() => {
+  const subtotal = cart.value?.totalAmount ?? 0;
+  const productDiscount = cart.value?.discountAmount ?? 0;
+  const serverCartTotal =
+    cart.value?.totalAfterDiscount ?? Math.max(subtotal - productDiscount, 0);
+  const total =
+    shippingFee.value === null
+      ? null
+      : Math.max(serverCartTotal + shippingFee.value, 0);
 
   return {
-    selectedCount: products.value.reduce((count, product) => count + product.quantity, 0),
+    selectedCount: cart.value?.totalQuantity ?? 0,
     subtotal,
     productDiscount,
-    orderVoucherDiscount,
     shippingFee: shippingFee.value,
-    shippingVoucherDiscount,
     total,
-    savedAmount: productDiscount + orderVoucherDiscount + shippingVoucherDiscount,
-  }
-})
+    savedAmount: productDiscount,
+  };
+});
 
-const canPlaceOrder = computed(() => {
-  if (isSubmitting.value || products.value.length === 0 || hasUnavailableProduct.value) return false
-  if (!paymentMethodId.value || !selectedPayment.value?.available) return false
-  if (fulfillment.value === 'delivery') {
-    return Boolean(selectedAddress.value)
+const checkoutDataReady = computed(() => {
+  if (userId.value === null || orderSucceeded.value) return false;
+  if (cartItems.value.length === 0 || hasUnavailableProduct.value) return false;
+  if (!branchMatchesCart.value) return false;
+  if (!paymentPayloadValue.value || !selectedPayment.value?.available)
+    return false;
+  const quote = shippingQuoteQuery.data.value;
+  return Boolean(
+    selectedAddress.value &&
+    shippingAddressId.value &&
+    quote &&
+    /^[a-f0-9]{64}$/.test(quote.quoteToken) &&
+    !shippingQuoteQuery.isPending.value &&
+    !shippingQuoteQuery.isError.value &&
+    !shippingQuoteExpired.value,
+  );
+});
+const canPlaceOrder = computed(
+  () => checkoutDataReady.value && !createOrderMutation.isPending.value,
+);
+
+const checkoutReadinessMessage = computed(() => {
+  if (userId.value === null) return "Vui lòng đăng nhập để đặt hàng.";
+  if (!branchMatchesCart.value)
+    return "Vui lòng kiểm tra lại chi nhánh của giỏ hàng.";
+  if (!selectedAddress.value) return "Vui lòng chọn địa chỉ nhận hàng.";
+  if (shippingQuoteQuery.isFetching.value)
+    return "Đang cập nhật báo giá vận chuyển.";
+  if (shippingQuoteQuery.isError.value)
+    return "Vui lòng lấy lại báo giá vận chuyển.";
+  if (shippingQuoteExpired.value) return "Báo giá vận chuyển đã hết hạn.";
+  if (!paymentPayloadValue.value)
+    return "Vui lòng chọn phương thức thanh toán được hỗ trợ.";
+  if (hasUnavailableProduct.value)
+    return "Vui lòng điều chỉnh sản phẩm chưa đủ tồn kho.";
+  return "";
+});
+
+function productImage(
+  itemId: number,
+  imageUrl: string | undefined,
+): string | undefined {
+  const normalizedUrl = imageUrl?.trim();
+  if (!normalizedUrl || failedProductImageIds.value.has(itemId))
+    return undefined;
+  if (
+    normalizedUrl.startsWith("/") ||
+    normalizedUrl.startsWith("https://") ||
+    normalizedUrl.startsWith("http://") ||
+    normalizedUrl.startsWith("data:image/")
+  ) {
+    return normalizedUrl;
   }
-  return Boolean(selectedBranch.value?.available)
-})
+  return undefined;
+}
+
+function productBrandName(product: object): string | undefined {
+  if (!("brandName" in product) || typeof product.brandName !== "string")
+    return undefined;
+  return product.brandName.trim() || undefined;
+}
+
+function markProductImageFailed(itemId: number): void {
+  failedProductImageIds.value = new Set([
+    ...failedProductImageIds.value,
+    itemId,
+  ]);
+}
+
+const branchIssueMessage = computed(() => {
+  if (branchStore.status === "error") {
+    return branchStore.error ?? "Không thể xác nhận chi nhánh đang hoạt động.";
+  }
+  if (branchStore.selectedBranchId === null) {
+    return "Chưa chọn chi nhánh đang hoạt động. Vui lòng chọn chi nhánh trước khi thanh toán.";
+  }
+  if (!cartBranch.value) {
+    return "Giỏ hàng chưa được gắn với chi nhánh. Vui lòng quay lại giỏ hàng để đồng bộ.";
+  }
+  if (cartBranch.value.id !== branchStore.selectedBranchId) {
+    return "Chi nhánh của giỏ hàng không khớp với chi nhánh đang hoạt động. Vui lòng quay lại giỏ hàng để đồng bộ.";
+  }
+  return "";
+});
+
+function errorMessage(error: unknown, fallback: string): string {
+  return typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+    ? error.message
+    : fallback;
+}
+
+const cartErrorMessage = computed(() =>
+  errorMessage(
+    cartQuery.error.value,
+    "Không thể tải giỏ hàng. Vui lòng thử lại.",
+  ),
+);
+const shippingQuoteErrorMessage = computed(() =>
+  errorMessage(
+    shippingQuoteQuery.error.value,
+    "Không thể lấy báo giá vận chuyển. Vui lòng thử lại.",
+  ),
+);
+const orderErrorMessage = computed(() =>
+  errorMessage(
+    createOrderMutation.error.value,
+    "Không thể tạo đơn hàng. Vui lòng kiểm tra thông tin và thử lại.",
+  ),
+);
+const orderValidationMessages = computed(() => {
+  const errors = readValidationErrors(createOrderMutation.error.value);
+  if (!errors) return [];
+  return Object.values(errors)
+    .flatMap((messages) => messages)
+    .map((message) => message.trim())
+    .filter(Boolean);
+});
 
 function addressText(address: CheckoutAddress): string {
   return [
@@ -209,57 +394,67 @@ function addressText(address: CheckoutAddress): string {
     address.wardName,
     address.districtName,
     address.provinceName,
-  ].filter(Boolean).join(', ')
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 function openAddressSelector(): void {
-  resetAddressMutationErrors()
-  addressDialogStartInForm.value = addresses.value.length === 0
-  addressDraft.value = { ...emptyCheckoutAddressDraft, isDefault: addresses.value.length === 0 }
-  addressDialogOpen.value = true
+  resetAddressMutationErrors();
+  addressDialogStartInForm.value = addresses.value.length === 0;
+  addressDraft.value = {
+    ...emptyCheckoutAddressDraft,
+    isDefault: addresses.value.length === 0,
+  };
+  addressDialogOpen.value = true;
 }
 
-async function handleAddressContinue(draft: CheckoutAddressDraft): Promise<void> {
-  if (addressSaving.value) return
-  resetAddressMutationErrors()
-  addressDraft.value = { ...draft }
+async function handleAddressContinue(
+  draft: CheckoutAddressDraft,
+): Promise<void> {
+  if (addressSaving.value) return;
+  resetAddressMutationErrors();
+  addressDraft.value = { ...draft };
   try {
     const savedAddress = draft.id
       ? await updateAddressMutation.mutateAsync(draft)
-      : await createAddressMutation.mutateAsync(draft)
-    selectedAddressId.value = savedAddress.id
-    addressDialogOpen.value = false
+      : await createAddressMutation.mutateAsync(draft);
+    selectedAddressId.value = savedAddress.id;
+    addressDialogOpen.value = false;
   } catch {
     // The mutation owns the normalized error shown in the dialog.
   }
 }
 
 function handleAddressEdit(address: CheckoutAddress): void {
-  resetAddressMutationErrors()
-  addressDraft.value = { ...address }
+  resetAddressMutationErrors();
+  addressDraft.value = { ...address };
 }
 
 async function handleSetDefaultAddress(id: string): Promise<void> {
-  if (addressSaving.value) return
-  resetAddressMutationErrors()
+  if (addressSaving.value) return;
+  resetAddressMutationErrors();
   try {
-    const address = await setDefaultAddressMutation.mutateAsync(id)
-    selectedAddressId.value = address.id
+    const address = await setDefaultAddressMutation.mutateAsync(id);
+    selectedAddressId.value = address.id;
   } catch {
     // The mutation owns the normalized error shown in the dialog.
   }
 }
 
 async function handleDeleteAddress(id: string): Promise<void> {
-  if (addressSaving.value) return
-  resetAddressMutationErrors()
-  const remainingAddresses = addresses.value.filter((address) => address.id !== id)
+  if (addressSaving.value) return;
+  resetAddressMutationErrors();
+  const remainingAddresses = addresses.value.filter(
+    (address) => address.id !== id,
+  );
   try {
-    await deleteAddressMutation.mutateAsync(id)
+    await deleteAddressMutation.mutateAsync(id);
     if (selectedAddressId.value === id) {
-      selectedAddressId.value = remainingAddresses.find((address) => address.isDefault)?.id
-        ?? remainingAddresses[0]?.id
-        ?? ''
+      selectedAddressId.value =
+        remainingAddresses.find((address) => address.isDefault)?.id ??
+        remainingAddresses[0]?.id ??
+        "";
     }
   } catch {
     // The mutation owns the normalized error shown in the dialog.
@@ -267,110 +462,286 @@ async function handleDeleteAddress(id: string): Promise<void> {
 }
 
 const addressErrorMessage = computed(() => {
-  const error = createAddressMutation.error.value
-    ?? updateAddressMutation.error.value
-    ?? setDefaultAddressMutation.error.value
-    ?? deleteAddressMutation.error.value
-    ?? addressesQuery.error.value
-  if (!error) return ''
-  if (typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return error.message
+  const error =
+    createAddressMutation.error.value ??
+    updateAddressMutation.error.value ??
+    setDefaultAddressMutation.error.value ??
+    deleteAddressMutation.error.value ??
+    addressesQuery.error.value;
+  if (!error) return "";
+  if (
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
   }
-  return 'Không thể xử lý địa chỉ. Vui lòng thử lại.'
-})
+  return "Không thể xử lý địa chỉ. Vui lòng thử lại.";
+});
 
 function readValidationErrors(error: unknown): ApiValidationErrors | undefined {
   if (
-    typeof error !== 'object'
-    || error === null
-    || !('validationErrors' in error)
-    || typeof error.validationErrors !== 'object'
-    || error.validationErrors === null
+    typeof error !== "object" ||
+    error === null ||
+    !("validationErrors" in error) ||
+    typeof error.validationErrors !== "object" ||
+    error.validationErrors === null
   ) {
-    return undefined
+    return undefined;
   }
-  return error.validationErrors as ApiValidationErrors
+  return error.validationErrors as ApiValidationErrors;
 }
 
 const addressServerErrors = computed(() => {
-  const error = createAddressMutation.error.value ?? updateAddressMutation.error.value
-  return customerAddressFormErrors(readValidationErrors(error))
-})
+  const error =
+    createAddressMutation.error.value ?? updateAddressMutation.error.value;
+  return customerAddressFormErrors(readValidationErrors(error));
+});
 
-const addressSaving = computed(() =>
-  createAddressMutation.isPending.value
-  || updateAddressMutation.isPending.value
-  || setDefaultAddressMutation.isPending.value
-  || deleteAddressMutation.isPending.value,
-)
+const addressSaving = computed(
+  () =>
+    createAddressMutation.isPending.value ||
+    updateAddressMutation.isPending.value ||
+    setDefaultAddressMutation.isPending.value ||
+    deleteAddressMutation.isPending.value,
+);
 
 function resetAddressMutationErrors(): void {
-  createAddressMutation.reset()
-  updateAddressMutation.reset()
-  setDefaultAddressMutation.reset()
-  deleteAddressMutation.reset()
+  createAddressMutation.reset();
+  updateAddressMutation.reset();
+  setDefaultAddressMutation.reset();
+  deleteAddressMutation.reset();
 }
 
 function selectAddress(id: string): void {
-  selectedAddressId.value = id
-}
-
-function switchFulfillment(method: FulfillmentMethod): void {
-  fulfillment.value = method
-  if (method === 'pickup') shippingVoucherId.value = ''
-}
-
-function applyVouchers(orderId: string, shippingId: string): void {
-  orderVoucherId.value = orderId
-  shippingVoucherId.value = fulfillment.value === 'delivery' ? shippingId : ''
+  selectedAddressId.value = id;
 }
 
 function selectPayment(id: string): void {
-  const method = checkoutPaymentMethods.find((item) => item.id === id)
-  if (method?.available) paymentMethodId.value = id
+  const method = supportedCheckoutPaymentMethods.find((item) => item.id === id);
+  if (method?.available) paymentMethodId.value = id;
 }
 
-function clearSubmitTimer(): void {
-  if (submitTimer !== undefined) {
-    window.clearTimeout(submitTimer)
-    submitTimer = undefined
+function selectVouchers(
+  orderVoucherId: string,
+  shippingVoucherId: string,
+): void {
+  selectedOrderVoucherId.value = orderVoucherId;
+  selectedShippingVoucherId.value = shippingVoucherId;
+}
+
+function removeSelectedVouchers(): void {
+  selectedOrderVoucherId.value = "";
+  selectedShippingVoucherId.value = "";
+}
+
+function deliveryOrderPayload(): DeliveryOrderPayload | null {
+  const addressId = shippingAddressId.value;
+  const quote = shippingQuoteQuery.data.value;
+  const paymentMethod = paymentPayloadValue.value;
+  if (
+    addressId === null ||
+    !quote ||
+    quoteHasExpired(quote.expiresAt) ||
+    !/^[a-f0-9]{64}$/.test(quote.quoteToken) ||
+    paymentMethod === null
+  ) {
+    return null;
+  }
+
+  return {
+    delivery_method: "delivery",
+    address_id: addressId,
+    shipping_quote_token: quote.quoteToken,
+    payment_method: paymentMethod,
+  };
+}
+
+const orderAttemptStorageKey = computed(() =>
+  userId.value === null
+    ? null
+    : `${ORDER_ATTEMPT_STORAGE_PREFIX}:${userId.value}`,
+);
+
+function orderPayloadFingerprint(payload: DeliveryOrderPayload): string {
+  return JSON.stringify({
+    payload,
+    cart: {
+      id: cart.value?.id ?? null,
+      branchId: cartBranch.value?.id ?? null,
+      totalQuantity: cart.value?.totalQuantity ?? null,
+      totalAmount: cart.value?.totalAmount ?? null,
+      discountAmount: cart.value?.discountAmount ?? null,
+      totalAfterDiscount: cart.value?.totalAfterDiscount ?? null,
+      items: cartItems.value.map((item) => ({
+        id: item.id,
+        productId: item.product.id,
+        variantId: item.variant.id,
+        quantity: item.quantity,
+        subtotal: item.subtotal,
+      })),
+    },
+  });
+}
+
+function storedOrderAttempt(fingerprint: string): CheckoutOrderAttempt | null {
+  const storageKey = orderAttemptStorageKey.value;
+  if (!storageKey) return null;
+  try {
+    const stored = window.sessionStorage.getItem(storageKey);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored) as Partial<CheckoutOrderAttempt>;
+    if (
+      parsed.fingerprint !== fingerprint ||
+      typeof parsed.idempotencyKey !== "string" ||
+      parsed.idempotencyKey.length === 0
+    )
+      return null;
+    return { fingerprint, idempotencyKey: parsed.idempotencyKey };
+  } catch {
+    return null;
   }
 }
 
-function placeOrder(): void {
-  if (!canPlaceOrder.value || isSubmitting.value) return
-  isSubmitting.value = true
-  submitCount.value += 1
-  clearSubmitTimer()
-
-  submitTimer = window.setTimeout(() => {
-    isSubmitting.value = false
-    result.value = nextResultKind.value === 'success'
-      ? {
-          kind: 'success',
-          orderNumber: 'MZK-DEMO-260731',
-          message: 'Đơn hàng demo đã được tạo trong bộ nhớ cục bộ.',
-        }
-      : {
-          kind: 'failure',
-          message: 'Mô phỏng gián đoạn tạm thời. Thông tin checkout vẫn được giữ nguyên.',
-        }
-    resultDialogOpen.value = true
-    submitTimer = undefined
-  }, 250)
+function persistOrderAttempt(attempt: CheckoutOrderAttempt): void {
+  const storageKey = orderAttemptStorageKey.value;
+  if (!storageKey) return;
+  window.sessionStorage.setItem(storageKey, JSON.stringify(attempt));
 }
 
-function retryOrder(): void {
-  resultDialogOpen.value = false
-  result.value = null
-  nextResultKind.value = 'success'
+function clearOrderAttempt(): void {
+  const storageKey = orderAttemptStorageKey.value;
+  orderAttempt.value = null;
+  if (storageKey) window.sessionStorage.removeItem(storageKey);
 }
 
-function retryCheckout(): void {
-  viewState.value = 'success'
+function orderAttemptFor(payload: DeliveryOrderPayload): CheckoutOrderAttempt {
+  const fingerprint = orderPayloadFingerprint(payload);
+  if (orderAttempt.value?.fingerprint === fingerprint)
+    return orderAttempt.value;
+
+  const stored = storedOrderAttempt(fingerprint);
+  if (stored) {
+    orderAttempt.value = stored;
+    return stored;
+  }
+
+  const attempt = {
+    fingerprint,
+    idempotencyKey: crypto.randomUUID(),
+  };
+  orderAttempt.value = attempt;
+  persistOrderAttempt(attempt);
+  return attempt;
 }
 
-onUnmounted(clearSubmitTimer)
+const currentOrderPayloadFingerprint = computed(() => {
+  const payload = deliveryOrderPayload();
+  return payload ? orderPayloadFingerprint(payload) : null;
+});
+
+function openOrderConfirmation(): void {
+  const payload = deliveryOrderPayload();
+  if (!canPlaceOrder.value || !payload || totals.value.total === null) return;
+  createOrderMutation.reset();
+  orderNotice.value = "";
+  confirmationSnapshot.value = {
+    addressId: payload.address_id,
+    quoteToken: payload.shipping_quote_token,
+    expectedTotal: totals.value.total,
+  };
+  confirmationDialogOpen.value = true;
+}
+
+function closeOrderConfirmation(): void {
+  if (createOrderMutation.isPending.value) return;
+  confirmationDialogOpen.value = false;
+  confirmationSnapshot.value = null;
+  createOrderMutation.reset();
+}
+
+async function refreshExpiredQuote(
+  previousTotal: number | null,
+): Promise<void> {
+  confirmationDialogOpen.value = false;
+  confirmationSnapshot.value = null;
+  const result = await shippingQuoteQuery.refetch();
+  await nextTick();
+  if (result.error || !result.data || quoteHasExpired(result.data.expiresAt)) {
+    orderNotice.value =
+      "Chưa thể cập nhật báo giá. Vui lòng thử lấy lại báo giá vận chuyển.";
+    return;
+  }
+  orderNotice.value =
+    previousTotal !== null &&
+    totals.value.total !== null &&
+    previousTotal !== totals.value.total
+      ? "Phí vận chuyển và Tổng dự kiến đã thay đổi. Vui lòng kiểm tra và xác nhận lại."
+      : "Báo giá vận chuyển đã được cập nhật. Vui lòng xác nhận lại đơn hàng.";
+}
+
+async function confirmOrder(): Promise<void> {
+  if (createOrderMutation.isPending.value) return;
+  const snapshot = confirmationSnapshot.value;
+  const quote = shippingQuoteQuery.data.value;
+  if (!snapshot || !quote) {
+    closeOrderConfirmation();
+    orderNotice.value =
+      "Thông tin đặt hàng đã thay đổi. Vui lòng xác nhận lại.";
+    return;
+  }
+  if (quoteHasExpired(quote.expiresAt)) {
+    await refreshExpiredQuote(snapshot.expectedTotal);
+    return;
+  }
+
+  const payload = deliveryOrderPayload();
+  if (
+    !payload ||
+    payload.address_id !== snapshot.addressId ||
+    payload.shipping_quote_token !== snapshot.quoteToken ||
+    totals.value.total !== snapshot.expectedTotal
+  ) {
+    closeOrderConfirmation();
+    orderNotice.value =
+      "Địa chỉ, báo giá hoặc Tổng dự kiến đã thay đổi. Vui lòng xác nhận lại.";
+    return;
+  }
+
+  try {
+    const attempt = orderAttemptFor(payload);
+    const order = await createOrderMutation.mutateAsync({
+      payload,
+      idempotencyKey: attempt.idempotencyKey,
+    });
+    clearOrderAttempt();
+    confirmationDialogOpen.value = false;
+    confirmationSnapshot.value = null;
+    orderSucceeded.value = true;
+    createdOrder.value = order;
+    queryClient.removeQueries({
+      queryKey: customerShippingQuoteKeys.detail(snapshot.addressId),
+      exact: true,
+    });
+    await cartQuery.refetch();
+  } catch {
+    // The normalized mutation error remains visible in the confirmation dialog.
+  }
+}
+
+watch(shippingAddressId, () => {
+  if (createOrderMutation.isPending.value) return;
+  confirmationDialogOpen.value = false;
+  confirmationSnapshot.value = null;
+  orderNotice.value = "";
+  createOrderMutation.reset();
+});
+
+watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
+  if (previousFingerprint !== null && fingerprint !== previousFingerprint) {
+    clearOrderAttempt();
+  }
+});
 </script>
 
 <template>
@@ -379,95 +750,144 @@ onUnmounted(clearSubmitTimer)
       class="min-h-[70svh] bg-[#f7faf8] pb-20 md:pb-0"
       data-checkout-page
       :data-scenario="props.scenario"
-      :data-submit-count="submitCount"
     >
-      <div class="mx-auto w-full max-w-[90rem] px-4 py-4 sm:px-6 lg:px-8 lg:py-5">
+      <div
+        class="mx-auto w-full max-w-[90rem] px-4 py-4 sm:px-6 lg:px-8 lg:py-5"
+      >
         <div class="flex min-w-0 items-center gap-2">
           <RouterLink
             :to="{ name: ROUTE_NAMES.cart }"
-            class="motion-interactive grid size-10 flex-none place-items-center rounded-xl text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            class="motion-interactive grid size-9 flex-none place-items-center rounded-lg text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             aria-label="Trở lại giỏ hàng"
           >
-            <ChevronLeft class="size-5" aria-hidden="true" />
+            <ChevronLeft class="size-4.5" aria-hidden="true" />
           </RouterLink>
-          <h1 class="truncate text-heading-3 text-primary-950">Thanh toán</h1>
-          <span class="text-caption text-text-muted">· Checkout demo</span>
+          <h1 class="truncate text-body-lg font-semibold text-primary-950">
+            Thanh toán
+          </h1>
         </div>
 
-        <div v-if="viewState === 'loading'" class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]" role="status" data-checkout-loading>
-          <span class="sr-only">Đang chuẩn bị checkout</span>
+        <div
+          v-if="cartQuery.isPending.value"
+          class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]"
+          role="status"
+          data-checkout-loading
+        >
+          <span class="sr-only">Đang tải giỏ hàng</span>
           <div class="h-96 animate-pulse rounded-3xl bg-primary-100" />
           <div class="h-80 animate-pulse rounded-3xl bg-primary-100" />
         </div>
 
-        <section v-else-if="viewState === 'empty'" class="mt-4 grid min-h-80 place-items-center rounded-3xl border border-primary-100 bg-white p-8 text-center" data-checkout-empty>
+        <section
+          v-else-if="cartQuery.isError.value"
+          class="mt-4 grid min-h-80 place-items-center rounded-3xl border border-primary-100 bg-white p-8 text-center"
+          data-checkout-error
+        >
           <div>
-            <PackageOpen class="mx-auto size-12 text-primary-500" aria-hidden="true" />
-            <h2 class="mt-4 text-heading-2 text-primary-950">Chưa có sản phẩm để thanh toán</h2>
-            <RouterLink :to="{ name: ROUTE_NAMES.products }" class="mt-5 inline-flex min-h-11 items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground">
+            <AlertTriangle
+              class="mx-auto size-12 text-[#a26524]"
+              aria-hidden="true"
+            />
+            <h2 class="mt-4 text-heading-2 text-primary-950">
+              Chưa thể tải giỏ hàng
+            </h2>
+            <p class="mt-2 text-body-md text-text-secondary">
+              {{ cartErrorMessage }}
+            </p>
+            <button
+              type="button"
+              class="mt-5 min-h-11 rounded-xl bg-primary px-5 font-semibold text-primary-foreground"
+              @click="cartQuery.refetch()"
+            >
+              Thử tải lại
+            </button>
+          </div>
+        </section>
+
+        <section
+          v-else-if="cartItems.length === 0"
+          class="mt-4 grid min-h-80 place-items-center rounded-3xl border border-primary-100 bg-white p-8 text-center"
+          data-checkout-empty
+        >
+          <div>
+            <PackageOpen
+              class="mx-auto size-12 text-primary-500"
+              aria-hidden="true"
+            />
+            <h2 class="mt-4 text-heading-2 text-primary-950">
+              Chưa có sản phẩm để thanh toán
+            </h2>
+            <RouterLink
+              :to="{ name: ROUTE_NAMES.products }"
+              class="mt-5 inline-flex min-h-11 items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground"
+            >
               Xem sản phẩm
             </RouterLink>
           </div>
         </section>
 
-        <section v-else-if="viewState === 'error'" class="mt-4 grid min-h-80 place-items-center rounded-3xl border border-primary-100 bg-white p-8 text-center" data-checkout-error>
-          <div>
-            <AlertTriangle class="mx-auto size-12 text-[#a26524]" aria-hidden="true" />
-            <h2 class="mt-4 text-heading-2 text-primary-950">Chưa thể chuẩn bị checkout</h2>
-            <p class="mt-2 text-body-md text-text-secondary">Dữ liệu demo gặp gián đoạn có thể khôi phục.</p>
-            <button type="button" class="mt-5 min-h-11 rounded-xl bg-primary px-5 font-semibold text-primary-foreground" @click="retryCheckout">
-              Thử lại
-            </button>
-          </div>
-        </section>
-
-        <div v-else class="mt-3 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] xl:gap-7" data-checkout-layout>
-          <div class="grid min-w-0 gap-4">
-            <section class="rounded-3xl border border-primary-100 bg-white p-4 shadow-xs sm:p-5" aria-labelledby="fulfillment-heading">
-              <h2 id="fulfillment-heading" class="text-body-lg font-semibold text-primary-950">Cách nhận hàng</h2>
-              <div class="mt-3 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Cách nhận hàng">
-                <button
-                  v-for="option in [
-                    { id: 'delivery', label: 'Giao tận nơi', icon: Truck },
-                    { id: 'pickup', label: 'Nhận tại chi nhánh', icon: Store },
-                  ] as const"
-                  :key="option.id"
-                  type="button"
-                  role="radio"
-                  :aria-checked="fulfillment === option.id"
-                  :class="cn(
-                    'motion-interactive inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-body-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                    fulfillment === option.id
-                      ? 'border-primary-500 bg-primary-50 text-primary-950'
-                      : 'border-primary-100 text-text-secondary',
-                  )"
-                  :data-fulfillment="option.id"
-                  @click="switchFulfillment(option.id)"
-                >
-                  <component :is="option.icon" class="size-4.5" aria-hidden="true" />
-                  {{ option.label }}
-                </button>
-              </div>
+        <div
+          v-else
+          class="mt-3 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_21rem] xl:gap-5"
+          data-checkout-layout
+        >
+          <div class="grid min-w-0 gap-3">
+            <section
+              v-if="branchIssueMessage"
+              class="rounded-2xl border border-[#edcbc7] bg-[#fff5f3] p-4 text-body-sm text-[#8f3733]"
+              role="alert"
+              data-checkout-branch-error
+            >
+              <p class="font-semibold">Chưa thể xác nhận chi nhánh</p>
+              <p class="mt-1">{{ branchIssueMessage }}</p>
+              <RouterLink
+                :to="{ name: ROUTE_NAMES.cart }"
+                class="mt-2 inline-flex min-h-9 items-center font-semibold underline underline-offset-2"
+              >
+                Quay lại giỏ hàng
+              </RouterLink>
             </section>
 
             <section
-              v-if="fulfillment === 'delivery'"
-              class="rounded-3xl border border-primary-100 bg-white p-4 shadow-xs sm:p-5"
+              class="rounded-2xl border border-primary-100 bg-white p-3.5 shadow-xs sm:p-4"
               aria-labelledby="delivery-address-heading"
               data-delivery-section
             >
               <div class="flex items-center justify-between gap-3">
-                <h2 id="delivery-address-heading" class="text-body-lg font-semibold text-primary-950">Địa chỉ nhận hàng</h2>
-                <button type="button" class="min-h-10 rounded-xl px-3 text-body-sm font-semibold text-primary-800" @click="openAddressSelector">
-                  {{ selectedAddress ? 'Thay đổi' : 'Thêm địa chỉ' }}
+                <h2
+                  id="delivery-address-heading"
+                  class="text-body-lg font-semibold text-primary-950"
+                >
+                  Địa chỉ nhận hàng
+                </h2>
+                <button
+                  type="button"
+                  class="min-h-10 rounded-xl px-3 text-body-sm font-semibold text-primary-800"
+                  @click="openAddressSelector"
+                >
+                  {{ selectedAddress ? "Thay đổi" : "Thêm địa chỉ" }}
                 </button>
               </div>
-              <div v-if="addressesQuery.isPending.value" class="mt-3 rounded-2xl bg-muted p-4 text-body-sm text-text-secondary" role="status" data-address-loading>
+              <div
+                v-if="addressesQuery.isPending.value"
+                class="mt-3 rounded-2xl bg-muted p-4 text-body-sm text-text-secondary"
+                role="status"
+                data-address-loading
+              >
                 Đang tải địa chỉ đã lưu...
               </div>
-              <div v-else-if="addressesQuery.isError.value" class="mt-3 rounded-2xl bg-destructive/10 p-4 text-body-sm text-destructive" role="alert" data-address-error>
+              <div
+                v-else-if="addressesQuery.isError.value"
+                class="mt-3 rounded-2xl bg-destructive/10 p-4 text-body-sm text-destructive"
+                role="alert"
+                data-address-error
+              >
                 <p>{{ addressErrorMessage }}</p>
-                <button type="button" class="mt-2 min-h-9 font-semibold underline underline-offset-2" @click="addressesQuery.refetch()">
+                <button
+                  type="button"
+                  class="mt-2 min-h-9 font-semibold underline underline-offset-2"
+                  @click="addressesQuery.refetch()"
+                >
                   Thử tải lại địa chỉ
                 </button>
               </div>
@@ -475,208 +895,577 @@ onUnmounted(clearSubmitTimer)
                 v-else-if="selectedAddress"
                 class="mt-3 rounded-2xl bg-primary-50 p-4"
                 data-selected-address
-                :data-ghn-province-id="selectedAddress.ghn_province_id ?? undefined"
-                :data-ghn-district-id="selectedAddress.ghn_district_id ?? undefined"
+                :data-ghn-province-id="
+                  selectedAddress.ghn_province_id ?? undefined
+                "
+                :data-ghn-district-id="
+                  selectedAddress.ghn_district_id ?? undefined
+                "
                 :data-ghn-ward-code="selectedAddress.ghn_ward_code"
               >
                 <div class="flex flex-wrap items-center gap-2">
-                  <strong class="text-primary-950">{{ selectedAddress.fullName }}</strong>
-                  <span class="text-body-sm text-text-secondary">{{ selectedAddress.phone }}</span>
-                  <span v-if="selectedAddress.isDefault" class="rounded-full bg-primary-700 px-2 py-1 text-caption font-semibold text-white">Mặc định</span>
+                  <strong class="text-primary-950">{{
+                    selectedAddress.fullName
+                  }}</strong>
+                  <span class="text-body-sm text-text-secondary">{{
+                    selectedAddress.phone
+                  }}</span>
+                  <span
+                    v-if="selectedAddress.isDefault"
+                    class="rounded-full bg-primary-700 px-2 py-1 text-caption font-semibold text-white"
+                    >Mặc định</span
+                  >
                 </div>
-                <p class="mt-2 text-body-sm leading-5 text-text-secondary">{{ addressText(selectedAddress) }}</p>
-                <p class="mt-2 inline-flex items-center gap-1 text-caption font-semibold text-primary-700">
-                  <BadgeCheck class="size-4" aria-hidden="true" />
+                <p class="mt-2 text-body-sm leading-5 text-text-secondary">
+                  {{ addressText(selectedAddress) }}
+                </p>
+                <p
+                  class="mt-2 inline-flex items-center gap-1 text-caption font-semibold text-blue-600"
+                  data-saved-address-account
+                >
+                  <BadgeCheck class="size-4 text-blue-600" aria-hidden="true" />
                   Địa chỉ đã lưu trong tài khoản
                 </p>
               </div>
-              <div v-else class="mt-3 rounded-2xl border border-dashed border-primary-200 p-4 text-body-sm text-text-secondary" data-address-required>
+              <div
+                v-else
+                class="mt-3 rounded-2xl border border-dashed border-primary-200 p-4 text-body-sm text-text-secondary"
+                data-address-required
+              >
                 Thêm địa chỉ nhận hàng để tiếp tục.
               </div>
 
-              <fieldset class="mt-4 grid gap-2">
-                <legend class="text-body-sm font-semibold text-primary-950">Phương thức giao hàng</legend>
-                <label
-                  v-for="option in checkoutShippingOptions"
-                  :key="option.id"
-                  class="flex cursor-pointer items-start gap-3 rounded-2xl border border-primary-100 p-3 has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50"
-                  :data-shipping-option="option.id"
+              <div
+                v-if="selectedAddress && branchMatchesCart"
+                class="mt-4"
+                data-shipping-quote
+              >
+                <p class="text-body-sm font-semibold text-primary-950">
+                  Vận chuyển GHN
+                </p>
+                <div
+                  v-if="shippingQuoteQuery.isFetching.value"
+                  class="mt-2 rounded-2xl bg-muted p-3 text-body-sm text-text-secondary"
+                  role="status"
+                  data-shipping-quote-loading
                 >
-                  <input v-model="selectedShippingId" type="radio" name="shipping" :value="option.id" class="mt-1 size-4 accent-primary" />
-                  <span class="min-w-0 flex-1">
-                    <strong class="text-body-sm text-primary-950">{{ option.label }}</strong>
-                    <span class="mt-1 block text-caption text-text-secondary">{{ option.estimate }} · {{ option.description }}</span>
-                  </span>
-                  <strong class="flex-none text-body-sm text-primary-900">{{ currencyFormatter.format(option.fee) }}</strong>
-                </label>
-              </fieldset>
-            </section>
-
-            <section v-else class="rounded-3xl border border-primary-100 bg-white p-4 shadow-xs sm:p-5" aria-labelledby="pickup-heading" data-pickup-section>
-              <h2 id="pickup-heading" class="text-body-lg font-semibold text-primary-950">Chi nhánh nhận hàng</h2>
-              <div class="mt-3 grid gap-2 sm:grid-cols-2">
-                <label
-                  v-for="branch in checkoutBranches"
-                  :key="branch.id"
-                  class="flex items-start gap-3 rounded-2xl border border-primary-100 p-3 has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50"
-                  :class="!branch.available && 'opacity-60'"
-                  :data-branch-id="branch.id"
+                  Đang lấy báo giá vận chuyển...
+                </div>
+                <div
+                  v-else-if="shippingQuoteQuery.isError.value"
+                  class="mt-2 rounded-2xl bg-destructive/10 p-3 text-body-sm text-destructive"
+                  role="alert"
+                  data-shipping-quote-error
                 >
-                  <input
-                    v-model="selectedBranchId"
-                    type="radio"
-                    name="pickup-branch"
-                    :value="branch.id"
-                    :disabled="!branch.available"
-                    class="mt-1 size-4 accent-primary"
-                  />
-                  <span>
-                    <strong class="text-body-sm text-primary-950">{{ branch.name }}</strong>
-                    <span class="mt-1 block text-caption leading-5 text-text-secondary">{{ branch.address }}</span>
-                    <span class="mt-1 block text-caption"><Clock3 class="mr-1 inline size-3.5" />{{ branch.openingHours }}</span>
-                    <span :class="cn('mt-1 block text-caption font-semibold', branch.available ? 'text-primary-700' : 'text-[#8f493f]')">{{ branch.availabilityLabel }}</span>
-                  </span>
-                </label>
+                  <p>{{ shippingQuoteErrorMessage }}</p>
+                  <button
+                    type="button"
+                    class="mt-2 min-h-9 font-semibold underline underline-offset-2"
+                    @click="shippingQuoteQuery.refetch()"
+                  >
+                    Thử lấy lại báo giá
+                  </button>
+                </div>
+                <div
+                  v-else-if="shippingQuoteExpired"
+                  class="mt-2 rounded-2xl border border-[#efd7b0] bg-[#fff9ed] p-3 text-body-sm text-[#78551d]"
+                  role="alert"
+                  data-shipping-quote-expired
+                >
+                  <p>Báo giá vận chuyển đã hết hạn.</p>
+                  <button
+                    type="button"
+                    class="mt-2 min-h-9 font-semibold underline underline-offset-2"
+                    @click="shippingQuoteQuery.refetch()"
+                  >
+                    Cập nhật báo giá
+                  </button>
+                </div>
+                <div
+                  v-else-if="shippingQuoteQuery.data.value"
+                  class="mt-2 rounded-2xl border border-blue-100 bg-blue-50/70 p-3"
+                  data-shipping-quote-success
+                  :data-quote-token="shippingQuoteQuery.data.value.quoteToken"
+                  :data-quote-expires-at="
+                    shippingQuoteQuery.data.value.expiresAt
+                  "
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <span class="flex min-w-0 items-start gap-2.5">
+                      <span
+                        class="grid size-9 flex-none place-items-center rounded-full bg-primary-100 text-primary-700"
+                      >
+                        <Truck
+                          class="size-5"
+                          aria-hidden="true"
+                          data-delivery-truck-icon
+                        />
+                      </span>
+                      <span class="min-w-0">
+                        <strong
+                          v-if="expectedDeliveryDate"
+                          class="block text-body-sm text-primary-950"
+                          >Dự kiến nhận hàng: {{ expectedDeliveryDate }}</strong
+                        >
+                        <strong
+                          v-else
+                          class="block text-body-sm text-primary-950"
+                          data-expected-delivery-fallback
+                          >Ngày nhận hàng dự kiến đang được cập nhật</strong
+                        >
+                        <span
+                          class="mt-0.5 block text-caption text-text-secondary"
+                          >Báo giá GHN cho địa chỉ hiện tại.</span
+                        >
+                      </span>
+                    </span>
+                    <strong class="flex-none text-body-sm text-blue-800">{{
+                      currencyFormatter.format(
+                        shippingQuoteQuery.data.value.shippingFee,
+                      )
+                    }}</strong>
+                  </div>
+                  <div
+                    class="mt-3 grid gap-2 border-t border-blue-100 pt-3 text-caption text-text-secondary"
+                    data-delivery-policies
+                  >
+                    <p class="flex items-center gap-2">
+                      <Info
+                        class="size-4 flex-none text-blue-600"
+                        aria-hidden="true"
+                      />
+                      Nhận tối đa 15.000đ nếu đơn hàng giao trễ
+                    </p>
+                    <details
+                      class="group rounded-lg bg-white/70 px-2.5 py-2"
+                      data-inspection-policy
+                    >
+                      <summary
+                        class="flex cursor-pointer list-none items-center gap-2 font-semibold text-blue-800"
+                      >
+                        <PackageCheck
+                          class="size-4 flex-none"
+                          aria-hidden="true"
+                        />
+                        Được đồng kiểm
+                        <span
+                          class="ml-auto text-[0.68rem] font-medium text-blue-600 group-open:hidden"
+                          >Xem thêm</span
+                        >
+                      </summary>
+                      <p class="mt-2 pl-6 leading-5">
+                        Bạn có thể kiểm tra tình trạng bên ngoài và đối chiếu
+                        sản phẩm khi nhận hàng.
+                      </p>
+                    </details>
+                  </div>
+                </div>
               </div>
             </section>
 
-            <section class="rounded-3xl border border-primary-100 bg-white p-4 shadow-xs sm:p-5" aria-labelledby="checkout-products-heading" data-checkout-products>
+            <section
+              class="rounded-2xl border border-primary-100 bg-white p-3.5 shadow-xs sm:p-4"
+              aria-labelledby="checkout-products-heading"
+              data-checkout-products
+            >
               <div class="flex items-center justify-between gap-3">
-                <h2 id="checkout-products-heading" class="text-body-lg font-semibold text-primary-950">Sản phẩm đã chọn</h2>
-                <RouterLink :to="{ name: ROUTE_NAMES.cart }" class="min-h-10 rounded-xl px-3 py-2 text-body-sm font-semibold text-primary-800">Thay đổi</RouterLink>
+                <h2
+                  id="checkout-products-heading"
+                  class="text-body-lg font-semibold text-primary-950"
+                >
+                  Toàn bộ giỏ hàng
+                </h2>
+                <RouterLink
+                  :to="{ name: ROUTE_NAMES.cart }"
+                  class="min-h-10 rounded-xl px-3 py-2 text-body-sm font-semibold text-primary-800"
+                  >Thay đổi</RouterLink
+                >
               </div>
               <div class="mt-3 divide-y divide-primary-100">
-                <article v-for="product in products" :key="product.id" class="flex min-w-0 gap-3 py-3 first:pt-0 last:pb-0" :data-product-available="product.available">
-                  <div class="grid size-20 flex-none place-items-center rounded-2xl bg-primary-50 text-primary-700">
-                    <PackageOpen class="size-7" aria-hidden="true" />
+                <article
+                  v-for="item in cartItems"
+                  :key="item.id"
+                  class="flex min-w-0 gap-3 py-3 first:pt-0 last:pb-0"
+                  :data-product-available="
+                    !item.stockWarning &&
+                    item.availableQuantity >= item.quantity
+                  "
+                >
+                  <div
+                    class="grid size-18 flex-none place-items-center overflow-hidden rounded-xl bg-primary-50 text-primary-700 sm:size-20"
+                  >
+                    <img
+                      v-if="productImage(item.id, item.product.imageUrl)"
+                      :src="productImage(item.id, item.product.imageUrl)"
+                      :alt="item.product.name"
+                      class="size-full object-cover"
+                      loading="lazy"
+                      data-checkout-product-image
+                      @error="markProductImageFailed(item.id)"
+                    />
+                    <PackageOpen
+                      v-else
+                      class="size-7"
+                      aria-hidden="true"
+                      data-checkout-product-fallback
+                    />
                   </div>
                   <div class="min-w-0 flex-1">
-                    <p class="text-caption font-semibold uppercase tracking-[0.08em] text-primary-700">{{ product.product.brand }}</p>
-                    <h3 class="mt-1 text-body-sm font-semibold leading-5 text-primary-950">{{ product.product.name }}</h3>
-                    <p class="mt-1 text-caption text-text-secondary">{{ product.variantLabel }} · SL {{ product.quantity }}</p>
-                    <p :class="cn('mt-1 text-caption font-semibold', product.available ? 'text-primary-700' : 'text-[#923b37]')">{{ product.availabilityLabel }}</p>
+                    <p
+                      v-if="productBrandName(item.product)"
+                      class="text-caption font-semibold text-primary-700"
+                      data-product-brand
+                    >
+                      {{ productBrandName(item.product) }}
+                    </p>
+                    <h3
+                      class="mt-1 break-words text-body-sm font-semibold leading-5 text-primary-950 [overflow-wrap:anywhere]"
+                    >
+                      {{ item.product.name }}
+                    </h3>
+                    <p class="mt-1 text-caption text-text-secondary">
+                      Số lượng: {{ item.quantity }}
+                    </p>
+                    <p
+                      v-if="
+                        item.stockWarning ||
+                        item.availableQuantity < item.quantity
+                      "
+                      class="mt-1 text-caption font-semibold text-[#923b37]"
+                    >
+                      Chỉ còn {{ item.availableQuantity }} sản phẩm
+                    </p>
                   </div>
-                  <div class="flex-none text-right">
-                    <strong class="text-body-sm text-[#c8423a]">{{ currencyFormatter.format(product.unitPrice * product.quantity) }}</strong>
-                    <span class="mt-1 block text-caption text-text-muted">{{ currencyFormatter.format(product.unitPrice) }}/sp</span>
+                  <div class="max-w-28 flex-none text-right sm:max-w-36">
+                    <strong class="text-body-sm text-[#c8423a]">{{
+                      currencyFormatter.format(item.subtotal)
+                    }}</strong>
+                    <span class="mt-1 block text-caption text-text-muted"
+                      >{{
+                        currencyFormatter.format(item.variant.effectivePrice)
+                      }}/sp</span
+                    >
                   </div>
                 </article>
               </div>
-              <div v-if="hasUnavailableProduct" class="mt-4 rounded-2xl border border-[#edcbc7] bg-[#fff5f3] p-3" role="alert" data-unavailable-warning>
-                <p class="text-body-sm font-semibold text-[#8f3733]">Có sản phẩm chưa thể đặt hàng.</p>
-                <RouterLink :to="{ name: ROUTE_NAMES.cart }" class="mt-2 inline-flex min-h-10 items-center font-semibold text-primary-800">Quay lại giỏ hàng để điều chỉnh</RouterLink>
-              </div>
-            </section>
-
-            <section class="grid gap-3 rounded-3xl border border-primary-100 bg-white p-4 shadow-xs sm:grid-cols-2 sm:p-5">
-              <div data-checkout-voucher-card>
-                <div class="flex items-center gap-2">
-                  <Tag class="size-4.5 text-primary-700" aria-hidden="true" />
-                  <h2 class="text-body-md font-semibold text-primary-950">Voucher</h2>
-                </div>
-                <p class="mt-2 text-body-sm text-text-secondary" data-selected-voucher>
-                  {{ selectedOrderVoucher?.label ?? selectedShippingVoucher?.label ?? 'Chưa chọn voucher' }}
+              <div
+                v-if="hasUnavailableProduct"
+                class="mt-4 rounded-2xl border border-[#edcbc7] bg-[#fff5f3] p-3"
+                role="alert"
+                data-unavailable-warning
+              >
+                <p class="text-body-sm font-semibold text-[#8f3733]">
+                  Có sản phẩm chưa thể đặt hàng.
                 </p>
-                <button type="button" class="mt-2 min-h-10 text-body-sm font-semibold text-primary-800" @click="voucherDialogOpen = true">
-                  {{ selectedOrderVoucher || selectedShippingVoucher ? 'Thay đổi' : 'Chọn voucher' }}
-                </button>
+                <RouterLink
+                  :to="{ name: ROUTE_NAMES.cart }"
+                  class="mt-2 inline-flex min-h-10 items-center font-semibold text-primary-800"
+                  >Quay lại giỏ hàng để điều chỉnh</RouterLink
+                >
               </div>
-              <div class="border-primary-100 sm:border-l sm:pl-4" data-checkout-payment-card>
-                <div class="flex items-center gap-2">
-                  <WalletCards class="size-4.5 text-primary-700" aria-hidden="true" />
-                  <h2 class="text-body-md font-semibold text-primary-950">Thanh toán</h2>
-                </div>
-                <p class="mt-2 text-body-sm text-text-secondary" data-selected-payment>
-                  {{ fulfillment === 'pickup' && paymentMethodId === 'cod' ? 'Thanh toán tại chi nhánh' : selectedPayment?.name }}
-                </p>
-                <button type="button" class="mt-2 min-h-10 text-body-sm font-semibold text-primary-800" @click="paymentDialogOpen = true">Thay đổi</button>
-              </div>
-            </section>
-
-            <section class="rounded-3xl border border-primary-100 bg-white p-4 shadow-xs sm:p-5">
-              <label for="checkout-note" class="text-body-md font-semibold text-primary-950">Ghi chú đơn hàng</label>
-              <textarea
-                id="checkout-note"
-                v-model="orderNote"
-                maxlength="300"
-                rows="2"
-                class="mt-2 min-h-20 w-full resize-none rounded-xl border border-input px-3 py-2 text-body-sm outline-none focus:border-primary-600 focus:ring-2 focus:ring-ring/20"
-                placeholder="Ghi chú cho Mizuki về việc giao hoặc nhận hàng..."
-              />
-              <p class="mt-1 text-right text-caption text-text-muted">{{ orderNote.length }}/300</p>
             </section>
           </div>
 
-          <aside class="min-w-0" aria-labelledby="checkout-summary-heading">
-            <div class="rounded-3xl border border-primary-100 bg-white p-5 shadow-sm lg:sticky lg:top-36" data-checkout-summary>
-              <h2 id="checkout-summary-heading" class="text-heading-3 text-primary-950">Đơn hàng</h2>
-              <dl class="mt-4 space-y-3 text-body-sm">
-                <div class="flex justify-between gap-4"><dt>Sản phẩm</dt><dd data-total-count>{{ totals.selectedCount }}</dd></div>
-                <div class="flex justify-between gap-4"><dt>Tạm tính</dt><dd data-total-subtotal>{{ currencyFormatter.format(totals.subtotal) }}</dd></div>
-                <div class="flex justify-between gap-4 text-primary-700"><dt>Giảm từ sản phẩm</dt><dd>-{{ currencyFormatter.format(totals.productDiscount) }}</dd></div>
-                <div class="flex justify-between gap-4 text-primary-700"><dt>Voucher đơn hàng</dt><dd data-total-order-voucher>-{{ currencyFormatter.format(totals.orderVoucherDiscount) }}</dd></div>
-                <div class="flex justify-between gap-4"><dt>Phí vận chuyển</dt><dd data-total-shipping>{{ totals.shippingFee ? currencyFormatter.format(totals.shippingFee) : 'Miễn phí' }}</dd></div>
-                <div class="flex justify-between gap-4 text-primary-700"><dt>Ưu đãi vận chuyển</dt><dd data-total-shipping-discount>-{{ currencyFormatter.format(totals.shippingVoucherDiscount) }}</dd></div>
-                <div class="flex items-end justify-between gap-4 border-t border-primary-100 pt-4">
-                  <dt class="font-semibold text-primary-950">Tổng cộng</dt>
-                  <dd class="text-heading-3 text-[#c8423a]" data-total>{{ currencyFormatter.format(totals.total) }}</dd>
-                </div>
-              </dl>
-              <p v-if="totals.savedAmount" class="mt-3 rounded-xl bg-primary-50 px-3 py-2 text-caption font-semibold text-primary-800" data-saved-amount>
-                Tiết kiệm {{ currencyFormatter.format(totals.savedAmount) }}
-              </p>
-              <details class="mt-4 rounded-xl border border-dashed border-primary-100 px-3 py-2 text-caption">
-                <summary class="cursor-pointer select-none font-medium text-text-secondary">
-                  Kịch bản demo
-                </summary>
-                <label class="mt-3 grid gap-1.5 text-primary-950">
-                  Kết quả đặt hàng
-                  <select
-                    v-model="nextResultKind"
-                    class="min-h-10 rounded-lg border border-primary-100 bg-white px-3 text-body-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    data-checkout-result-scenario
-                  >
-                    <option value="success">Thành công</option>
-                    <option value="failure">Lỗi có thể thử lại</option>
-                  </select>
-                </label>
-              </details>
-              <button
-                type="button"
-                class="motion-interactive mt-4 hidden min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-45 lg:inline-flex"
-                :disabled="!canPlaceOrder"
-                data-place-order-desktop
-                @click="placeOrder"
+          <aside
+            class="min-w-0"
+            aria-labelledby="checkout-summary-heading"
+            data-checkout-sidebar
+          >
+            <div
+              class="grid gap-3 lg:sticky lg:top-28"
+              data-checkout-sidebar-stack
+            >
+              <section
+                class="rounded-2xl border border-primary-100 bg-white p-4 shadow-xs"
+                data-checkout-voucher-card
               >
-                {{ isSubmitting ? 'Đang đặt hàng...' : 'Đặt hàng' }}
-              </button>
-              <p v-if="!canPlaceOrder && !isSubmitting" class="mt-2 text-caption text-text-secondary">
-                Hoàn tất địa chỉ, sản phẩm và thanh toán để tiếp tục.
-              </p>
+                <div class="flex items-center justify-between gap-3">
+                  <span class="flex items-center gap-2">
+                    <Tag class="size-4.5 text-blue-600" aria-hidden="true" />
+                    <h2 class="text-body-md font-semibold text-primary-950">
+                      Voucher
+                    </h2>
+                  </span>
+                  <button
+                    type="button"
+                    class="min-h-9 flex-none text-caption font-semibold text-blue-700"
+                    data-open-voucher-dialog
+                    @click="voucherDialogOpen = true"
+                  >
+                    {{
+                      selectedOrderVoucher || selectedShippingVoucher
+                        ? "Đổi voucher"
+                        : "Chọn voucher"
+                    }}
+                  </button>
+                </div>
+
+                <div
+                  v-if="selectedOrderVoucher || selectedShippingVoucher"
+                  class="mt-2 grid gap-2"
+                  data-selected-voucher-box
+                >
+                  <article
+                    v-if="selectedOrderVoucher"
+                    class="relative overflow-hidden rounded-xl border border-blue-300 bg-blue-50 p-3 text-caption text-blue-950"
+                    data-selected-order-voucher
+                  >
+                    <span
+                      class="absolute -left-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-blue-300 bg-white"
+                      aria-hidden="true"
+                    />
+                    <span class="flex items-start gap-2.5 pl-1">
+                      <span
+                        class="grid size-9 flex-none place-items-center rounded-lg bg-blue-100 text-blue-700"
+                        ><Tag class="size-4.5" aria-hidden="true"
+                      /></span>
+                      <span class="min-w-0 flex-1">
+                        <span class="flex items-start justify-between gap-2">
+                          <strong
+                            class="break-words text-body-sm text-blue-950"
+                            >{{ selectedOrderVoucher.label }}</strong
+                          >
+                          <span
+                            class="rounded bg-white px-1.5 py-0.5 text-[0.625rem] font-bold text-blue-700"
+                            >{{ selectedOrderVoucher.code }}</span
+                          >
+                        </span>
+                        <span class="mt-1 block leading-4 text-blue-800">{{
+                          selectedOrderVoucher.description
+                        }}</span>
+                        <span
+                          class="mt-1 flex items-start gap-1 text-[0.6875rem] text-blue-700"
+                        >
+                          <Info
+                            class="mt-0.5 size-3.5 flex-none"
+                            aria-hidden="true"
+                          />
+                          Đơn tối thiểu
+                          {{
+                            currencyFormatter.format(
+                              selectedOrderVoucher.minimumOrder,
+                            )
+                          }}
+                          · {{ selectedOrderVoucher.expiryText }}
+                        </span>
+                      </span>
+                    </span>
+                  </article>
+
+                  <article
+                    v-if="selectedShippingVoucher"
+                    class="relative overflow-hidden rounded-xl border border-blue-300 bg-blue-50 p-3 text-caption text-blue-950"
+                    data-selected-shipping-voucher
+                  >
+                    <span
+                      class="absolute -left-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-blue-300 bg-white"
+                      aria-hidden="true"
+                    />
+                    <span class="flex items-start gap-2.5 pl-1">
+                      <span
+                        class="grid size-9 flex-none place-items-center rounded-lg bg-blue-100 text-blue-700"
+                        ><Truck class="size-4.5" aria-hidden="true"
+                      /></span>
+                      <span class="min-w-0 flex-1">
+                        <span class="flex items-start justify-between gap-2">
+                          <strong
+                            class="break-words text-body-sm text-blue-950"
+                            >{{ selectedShippingVoucher.label }}</strong
+                          >
+                          <span
+                            class="rounded bg-white px-1.5 py-0.5 text-[0.625rem] font-bold text-blue-700"
+                            >{{ selectedShippingVoucher.code }}</span
+                          >
+                        </span>
+                        <span class="mt-1 block leading-4 text-blue-800">{{
+                          selectedShippingVoucher.description
+                        }}</span>
+                        <span
+                          class="mt-1 flex items-start gap-1 text-[0.6875rem] text-blue-700"
+                        >
+                          <Info
+                            class="mt-0.5 size-3.5 flex-none"
+                            aria-hidden="true"
+                          />
+                          Đơn tối thiểu
+                          {{
+                            currencyFormatter.format(
+                              selectedShippingVoucher.minimumOrder,
+                            )
+                          }}
+                          · {{ selectedShippingVoucher.expiryText }}
+                        </span>
+                      </span>
+                    </span>
+                  </article>
+
+                  <button
+                    type="button"
+                    class="min-h-8 justify-self-start text-caption font-semibold text-blue-700 underline underline-offset-2"
+                    data-remove-vouchers
+                    @click="removeSelectedVouchers"
+                  >
+                    Bỏ voucher
+                  </button>
+                </div>
+                <div
+                  v-else
+                  class="relative mt-2 flex items-center gap-2 overflow-hidden rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-caption text-blue-800"
+                  data-voucher-empty
+                >
+                  <span
+                    class="absolute -left-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-blue-200 bg-white"
+                    aria-hidden="true"
+                  />
+                  <span
+                    class="ml-1 grid size-8 flex-none place-items-center rounded-lg bg-blue-100"
+                    ><Tag class="size-4" aria-hidden="true"
+                  /></span>
+                  <span class="min-w-0 flex-1">Chưa chọn voucher mẫu</span>
+                  <Info class="size-4 flex-none" aria-hidden="true" />
+                </div>
+              </section>
+
+              <section
+                class="rounded-2xl border border-primary-200 bg-primary-50 p-4 shadow-xs"
+                data-checkout-payment-card
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span class="flex items-center gap-2">
+                    <Banknote
+                      class="size-4.5 text-primary-700"
+                      aria-hidden="true"
+                    />
+                    <h2 class="text-body-md font-semibold text-primary-950">
+                      Thanh toán
+                    </h2>
+                  </span>
+                  <button
+                    type="button"
+                    class="min-h-9 flex-none text-caption font-semibold text-primary-800"
+                    data-change-payment
+                    @click="paymentDialogOpen = true"
+                  >
+                    Thay đổi
+                  </button>
+                </div>
+                <p
+                  class="mt-1 text-body-sm font-semibold text-primary-900"
+                  data-selected-payment
+                >
+                  {{ selectedPayment?.name }}
+                </p>
+              </section>
+
+              <section
+                class="rounded-2xl border border-primary-100 bg-white p-4 shadow-sm"
+                data-checkout-summary
+              >
+                <h2
+                  id="checkout-summary-heading"
+                  class="text-heading-3 text-primary-950"
+                >
+                  Đơn hàng
+                </h2>
+                <dl class="mt-4 space-y-3 text-body-sm">
+                  <div class="flex justify-between gap-4">
+                    <dt>Số lượng</dt>
+                    <dd data-total-count>{{ totals.selectedCount }}</dd>
+                  </div>
+                  <div class="flex justify-between gap-4">
+                    <dt>Tạm tính</dt>
+                    <dd data-total-subtotal>
+                      {{ currencyFormatter.format(totals.subtotal) }}
+                    </dd>
+                  </div>
+                  <div class="flex justify-between gap-4">
+                    <dt>Phí vận chuyển</dt>
+                    <dd data-total-shipping>
+                      {{
+                        totals.shippingFee === null
+                          ? "Chưa xác định"
+                          : currencyFormatter.format(totals.shippingFee)
+                      }}
+                    </dd>
+                  </div>
+                  <div class="flex justify-between gap-4 text-primary-700">
+                    <dt>Tiết kiệm</dt>
+                    <dd data-saved-amount>
+                      {{ formatSavings(totals.savedAmount) }}
+                    </dd>
+                  </div>
+                  <div
+                    class="flex items-end justify-between gap-4 border-t border-primary-100 pt-4"
+                  >
+                    <dt class="font-semibold text-primary-950">Tổng dự kiến</dt>
+                    <dd class="text-heading-3 text-[#c8423a]" data-total>
+                      {{
+                        totals.total === null
+                          ? "Chờ báo giá"
+                          : currencyFormatter.format(totals.total)
+                      }}
+                    </dd>
+                  </div>
+                </dl>
+                <button
+                  type="button"
+                  class="motion-interactive mt-4 hidden min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-45 lg:inline-flex"
+                  :disabled="!canPlaceOrder"
+                  data-place-order-desktop
+                  @click="openOrderConfirmation"
+                >
+                  Đặt hàng
+                </button>
+                <p
+                  v-if="checkoutReadinessMessage"
+                  class="mt-2 text-caption text-text-secondary"
+                  data-checkout-readiness-message
+                >
+                  {{ checkoutReadinessMessage }}
+                </p>
+                <p
+                  v-if="orderNotice"
+                  class="mt-2 rounded-xl bg-[#fff9ed] px-3 py-2 text-caption text-[#78551d]"
+                  role="status"
+                  data-order-notice
+                >
+                  {{ orderNotice }}
+                </p>
+              </section>
             </div>
           </aside>
         </div>
       </div>
 
       <div
-        v-if="viewState === 'success' && products.length"
+        v-if="
+          !cartQuery.isPending.value &&
+          !cartQuery.isError.value &&
+          cartItems.length
+        "
         class="fixed inset-x-3 bottom-[5.75rem] z-30 flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/95 p-3 shadow-lg backdrop-blur-md md:hidden"
         data-mobile-order-bar
         role="region"
         aria-label="Thanh đặt hàng mobile"
       >
         <div class="min-w-0">
-          <strong class="block truncate text-body-lg text-[#c8423a]">{{ currencyFormatter.format(totals.total) }}</strong>
-          <span v-if="totals.savedAmount" class="block text-caption text-primary-700">Tiết kiệm {{ currencyFormatter.format(totals.savedAmount) }}</span>
+          <strong class="block truncate text-body-lg text-[#c8423a]">{{
+            totals.total === null
+              ? "Chờ báo giá"
+              : currencyFormatter.format(totals.total)
+          }}</strong>
+          <span class="block text-caption text-primary-700"
+            >Tiết kiệm: {{ formatSavings(totals.savedAmount) }}</span
+          >
         </div>
         <button
           type="button"
           class="motion-interactive inline-flex min-h-12 flex-none items-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-45"
           :disabled="!canPlaceOrder"
           data-place-order-mobile
-          @click="placeOrder"
+          @click="openOrderConfirmation"
         >
-          {{ isSubmitting ? 'Đang xử lý...' : 'Đặt hàng' }}
+          Đặt hàng
         </button>
       </div>
 
@@ -688,9 +1477,11 @@ onUnmounted(clearSubmitTimer)
         :start-in-form="addressDialogStartInForm"
         :loading="addressesQuery.isPending.value"
         :saving="addressSaving"
-        :deleting-id="deleteAddressMutation.isPending.value
-          ? deleteAddressMutation.variables.value
-          : undefined"
+        :deleting-id="
+          deleteAddressMutation.isPending.value
+            ? deleteAddressMutation.variables.value
+            : undefined
+        "
         :error-message="addressErrorMessage"
         :server-errors="addressServerErrors"
         @continue="handleAddressContinue"
@@ -700,53 +1491,215 @@ onUnmounted(clearSubmitTimer)
         @delete="handleDeleteAddress"
         @reset-error="resetAddressMutationErrors"
       />
+      <CheckoutPaymentDialog
+        v-model="paymentDialogOpen"
+        :methods="supportedCheckoutPaymentMethods"
+        :selected-id="paymentMethodId"
+        @confirm="selectPayment"
+      />
       <CheckoutVoucherDialog
         v-model="voucherDialogOpen"
         :vouchers="checkoutVouchers"
         :subtotal="totals.subtotal"
-        :shipping-fee="totals.shippingFee"
-        :selected-order-voucher-id="orderVoucherId"
-        :selected-shipping-voucher-id="shippingVoucherId"
-        @confirm="applyVouchers"
-      />
-      <CheckoutPaymentDialog
-        v-model="paymentDialogOpen"
-        :methods="checkoutPaymentMethods"
-        :selected-id="paymentMethodId"
-        :fulfillment="fulfillment"
-        @confirm="selectPayment"
+        :shipping-fee="totals.shippingFee ?? 0"
+        :selected-order-voucher-id="selectedOrderVoucherId"
+        :selected-shipping-voucher-id="selectedShippingVoucherId"
+        @confirm="selectVouchers"
       />
 
-      <BaseDialog
-        v-model="resultDialogOpen"
-        :title="result?.kind === 'success' ? 'Đặt hàng thành công' : 'Chưa thể đặt hàng'"
-        :description="result?.message"
-        close-label="Đóng kết quả đặt hàng"
-      >
-        <div v-if="result" class="grid gap-4" data-order-result :data-result-kind="result.kind">
-          <template v-if="result.kind === 'success'">
-            <p class="rounded-2xl bg-primary-50 p-4 text-body-sm text-primary-900">
-              Mã đơn demo: <strong>{{ result.orderNumber }}</strong><br />
-              {{ fulfillment === 'delivery' ? 'Giao tận nơi' : `Nhận tại ${selectedBranch?.name}` }} ·
-              {{ selectedPayment?.name }}
+      <Teleport to="body">
+        <div
+          v-if="confirmationDialogOpen"
+          class="fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-primary-950/45 p-4 backdrop-blur-[2px]"
+          data-order-confirmation
+          @click.self="closeOrderConfirmation"
+        >
+          <section
+            class="w-full max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-confirmation-title"
+          >
+            <h2
+              id="order-confirmation-title"
+              class="text-heading-2 text-primary-950"
+            >
+              Xác nhận đặt hàng
+            </h2>
+            <p class="mt-1 text-body-sm text-text-secondary">
+              Kiểm tra thông tin hiện tại trước khi gửi đơn hàng.
             </p>
-            <p v-if="orderPlaceholderVisible" class="text-body-sm text-text-secondary" role="status">
-              Trang theo dõi đơn thật chưa có; kết quả local vẫn được giữ trong hộp thoại này.
+            <dl
+              class="mt-5 grid gap-3 text-body-sm"
+              data-order-confirmation-summary
+            >
+              <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+                <dt class="text-text-secondary">Cách nhận hàng</dt>
+                <dd class="font-semibold text-primary-950">Giao tận nơi</dd>
+              </div>
+              <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+                <dt class="text-text-secondary">Người nhận</dt>
+                <dd class="min-w-0 font-semibold text-primary-950">
+                  {{ selectedAddress?.fullName }} · {{ selectedAddress?.phone }}
+                  <span
+                    v-if="selectedAddress"
+                    class="mt-1 block break-words font-normal text-text-secondary"
+                    >{{ addressText(selectedAddress) }}</span
+                  >
+                </dd>
+              </div>
+              <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+                <dt class="text-text-secondary">Chi nhánh</dt>
+                <dd class="min-w-0 font-semibold text-primary-950">
+                  {{ cartBranch?.name }}
+                  <span
+                    class="mt-1 block break-words font-normal text-text-secondary"
+                    >{{ cartBranch?.address }}</span
+                  >
+                </dd>
+              </div>
+              <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+                <dt class="text-text-secondary">Số lượng</dt>
+                <dd class="font-semibold text-primary-950">
+                  {{ totals.selectedCount }} sản phẩm
+                </dd>
+              </div>
+              <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+                <dt class="text-text-secondary">Thanh toán</dt>
+                <dd class="font-semibold text-primary-950">
+                  {{ selectedPayment?.name }}
+                </dd>
+              </div>
+              <div
+                class="flex items-end justify-between gap-4 border-t border-primary-100 pt-4"
+              >
+                <dt class="font-semibold text-primary-950">Tổng dự kiến</dt>
+                <dd
+                  class="text-heading-3 text-[#c8423a]"
+                  data-confirmation-total
+                >
+                  {{
+                    currencyFormatter.format(
+                      confirmationSnapshot?.expectedTotal ?? 0,
+                    )
+                  }}
+                </dd>
+              </div>
+            </dl>
+
+            <div
+              v-if="createOrderMutation.isError.value"
+              class="mt-4 rounded-2xl bg-destructive/10 p-3 text-body-sm text-destructive"
+              role="alert"
+              data-create-order-error
+            >
+              <p class="font-semibold">{{ orderErrorMessage }}</p>
+              <ul
+                v-if="orderValidationMessages.length"
+                class="mt-2 list-disc space-y-1 pl-5"
+              >
+                <li v-for="message in orderValidationMessages" :key="message">
+                  {{ message }}
+                </li>
+              </ul>
+            </div>
+
+            <div class="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                class="min-h-11 rounded-xl border border-primary-200 px-4 font-semibold text-primary-800 disabled:opacity-50"
+                :disabled="createOrderMutation.isPending.value"
+                data-cancel-order-confirmation
+                @click="closeOrderConfirmation"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                class="min-h-11 rounded-xl bg-primary px-4 font-semibold text-primary-foreground disabled:cursor-wait disabled:opacity-60"
+                :disabled="createOrderMutation.isPending.value"
+                data-confirm-order
+                @click="confirmOrder"
+              >
+                {{
+                  createOrderMutation.isPending.value
+                    ? "Đang đặt hàng..."
+                    : "Xác nhận đặt hàng"
+                }}
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <div
+          v-if="createdOrder"
+          class="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-primary-950/50 p-4 backdrop-blur-sm"
+          data-order-success
+        >
+          <section
+            class="relative w-full max-w-md overflow-hidden rounded-3xl bg-white p-6 text-center shadow-2xl sm:p-8"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-success-title"
+          >
+            <Sparkles
+              class="absolute left-7 top-8 size-6 rotate-[-18deg] text-[#e7b451]"
+              aria-hidden="true"
+            />
+            <Sparkles
+              class="absolute right-8 top-14 size-5 rotate-12 text-[#67b98c]"
+              aria-hidden="true"
+            />
+            <div
+              class="mx-auto grid size-20 place-items-center rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-200"
+            >
+              <CheckCircle2 class="size-11" aria-hidden="true" />
+            </div>
+            <h2
+              id="order-success-title"
+              class="mt-5 text-heading-2 text-emerald-800"
+            >
+              Đặt hàng thành công
+            </h2>
+            <p class="mt-2 text-body-sm text-text-secondary">
+              Mizuki đã xác nhận đơn hàng của bạn.
             </p>
-            <button type="button" class="min-h-11 rounded-xl border border-primary-200 font-semibold text-primary-900" @click="orderPlaceholderVisible = true">
-              Xem đơn hàng
-            </button>
-            <RouterLink :to="{ name: ROUTE_NAMES.products }" class="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground">
+            <div
+              class="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-left text-body-sm"
+            >
+              <p class="flex justify-between gap-4">
+                <span class="text-text-secondary">Mã đơn hàng</span
+                ><strong data-success-order-number>{{
+                  createdOrder.orderNumber
+                }}</strong>
+              </p>
+              <p class="mt-3 flex justify-between gap-4">
+                <span class="text-text-secondary">Thành tiền</span
+                ><strong class="text-emerald-800" data-success-order-total>{{
+                  currencyFormatter.format(createdOrder.totalAmount)
+                }}</strong>
+              </p>
+              <p class="mt-3 flex justify-between gap-4">
+                <span class="text-text-secondary">Cách nhận hàng</span
+                ><strong>Giao tận nơi</strong>
+              </p>
+              <p class="mt-3 flex justify-between gap-4">
+                <span class="text-text-secondary">Trạng thái</span
+                ><strong data-success-order-status>{{
+                  createdOrder.statusLabel
+                }}</strong>
+              </p>
+            </div>
+            <RouterLink
+              :to="{ name: ROUTE_NAMES.products }"
+              class="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground"
+              data-continue-shopping
+            >
               Tiếp tục mua sắm
             </RouterLink>
-          </template>
-          <template v-else>
-            <button type="button" class="min-h-11 rounded-xl bg-primary px-5 font-semibold text-primary-foreground" @click="retryOrder">
-              Thử đặt hàng lại
-            </button>
-          </template>
+          </section>
         </div>
-      </BaseDialog>
+      </Teleport>
     </div>
   </CustomerLayout>
 </template>
