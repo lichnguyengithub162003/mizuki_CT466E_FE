@@ -14,7 +14,7 @@ import type {
   LocationProvince,
   LocationWard,
 } from '@/api/locations/locationTypes'
-import type { CheckoutScenario } from '@/types/customer'
+import type { CheckoutAddress, CheckoutScenario } from '@/types/customer'
 import { useAuthStore } from '@/stores/auth'
 import { pinia } from '@/stores/pinia'
 
@@ -32,8 +32,17 @@ const cartApiMocks = vi.hoisted(() => ({
   selectCartBranch: vi.fn(),
 }))
 
+const addressApiMocks = vi.hoisted(() => ({
+  getCustomerAddresses: vi.fn(),
+  createCustomerAddress: vi.fn(),
+  updateCustomerAddress: vi.fn(),
+  setDefaultCustomerAddress: vi.fn(),
+  deleteCustomerAddress: vi.fn(),
+}))
+
 vi.mock('@/api/locations/locationApi', () => locationApiMocks)
 vi.mock('@/api/cartApi', () => cartApiMocks)
+vi.mock('@/api/addressApi', () => addressApiMocks)
 
 const provinces: readonly LocationProvince[] = [
   { ghn_province_id: 91, name: 'Cần Thơ' },
@@ -57,6 +66,21 @@ const wardsByDistrict: Readonly<Record<number, readonly LocationWard[]>> = {
   3695: [{ ghn_ward_code: '90742', name: 'Bến Nghé' }],
 }
 
+const savedAddresses: readonly CheckoutAddress[] = [
+  {
+    id: '17', fullName: 'Nguyễn Minh Anh', phone: '0912345678',
+    provinceName: 'Cần Thơ', districtName: 'Ninh Kiều', wardName: 'Xuân Khánh',
+    detail: '48 đường 30/4', isDefault: true,
+    ghn_province_id: 91, ghn_district_id: 1442, ghn_ward_code: '21012',
+  },
+  {
+    id: '18', fullName: 'Nguyễn Minh Anh', phone: '0987654321',
+    provinceName: 'Cần Thơ', districtName: 'Cái Răng', wardName: 'Hưng Phú',
+    detail: '12 Nguyễn Văn Linh', isDefault: false,
+    ghn_province_id: 91, ghn_district_id: 1443, ghn_ward_code: '21018',
+  },
+]
+
 interface MountedCheckout {
   readonly wrapper: VueWrapper
   readonly router: Router
@@ -64,6 +88,7 @@ interface MountedCheckout {
 
 const mountedWrappers: VueWrapper[] = []
 const queryClients: QueryClient[] = []
+let serverAddresses: CheckoutAddress[] = []
 
 class ResizeObserverMock implements ResizeObserver {
   readonly observe = vi.fn()
@@ -107,7 +132,11 @@ function createTestQueryClient(): QueryClient {
 async function mountCheckout(
   scenario: CheckoutScenario = 'first-time',
   throughRouter = false,
+  addressFixture: readonly CheckoutAddress[] = scenario === 'first-time' && !throughRouter
+    ? []
+    : savedAddresses,
 ): Promise<MountedCheckout> {
+  serverAddresses = [...addressFixture]
   const router = createAppRouter(createMemoryHistory())
   await router.push('/checkout')
   await router.isReady()
@@ -138,7 +167,7 @@ async function completeAddressForm(): Promise<void> {
   await nextTick()
   setInput('#checkout-address-detail', '  25 đường Mậu Thân  ')
   await nextTick()
-  findDocumentButton('Tiếp tục').click()
+  findDocumentButton('Lưu địa chỉ').click()
   await nextTick()
   await flushPromises()
 }
@@ -184,6 +213,38 @@ beforeEach(() => {
       stockWarning: false,
     }],
   })
+  serverAddresses = [...savedAddresses]
+  addressApiMocks.getCustomerAddresses.mockReset().mockImplementation(
+    async () => [...serverAddresses],
+  )
+  addressApiMocks.createCustomerAddress.mockReset().mockImplementation(async (draft) => {
+    const savedAddress = { ...draft, id: '19' }
+    serverAddresses = [
+      ...serverAddresses.map((address) => savedAddress.isDefault
+        ? { ...address, isDefault: false }
+        : address),
+      savedAddress,
+    ]
+    return savedAddress
+  })
+  addressApiMocks.updateCustomerAddress.mockReset().mockImplementation(async (id, draft) => {
+    const savedAddress = { ...draft, id }
+    serverAddresses = serverAddresses.map((address) => address.id === id
+      ? savedAddress
+      : savedAddress.isDefault ? { ...address, isDefault: false } : address)
+    return savedAddress
+  })
+  addressApiMocks.setDefaultCustomerAddress.mockReset().mockImplementation(async (id) => {
+    const savedAddress = { ...serverAddresses.find((address) => address.id === id)!, isDefault: true }
+    serverAddresses = serverAddresses.map((address) => ({
+      ...(address.id === id ? savedAddress : address),
+      isDefault: address.id === id,
+    }))
+    return savedAddress
+  })
+  addressApiMocks.deleteCustomerAddress.mockReset().mockImplementation(async (id) => {
+    serverAddresses = serverAddresses.filter((address) => address.id !== id)
+  })
 })
 
 afterEach(() => {
@@ -203,6 +264,63 @@ describe('customer checkout foundation', () => {
     expect(wrapper.get('[data-checkout-page] h1').text()).toBe('Thanh toán')
     expect(wrapper.find('[data-checkout-layout]').exists()).toBe(true)
   }, 10_000)
+
+  it('loads, updates, selects, and defaults persisted addresses on the real route', async () => {
+    const { wrapper } = await mountCheckout('first-time', true)
+
+    expect(addressApiMocks.getCustomerAddresses).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-selected-address]').text()).toContain('48 đường 30/4')
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+
+    document.querySelector<HTMLButtonElement>('button[aria-label="Sửa địa chỉ của Nguyễn Minh Anh"]')?.click()
+    await nextTick()
+    setInput('#checkout-address-detail', '50 đường 30/4')
+    await nextTick()
+    findDocumentButton('Lưu thay đổi').click()
+    await flushPromises()
+    expect(addressApiMocks.updateCustomerAddress).toHaveBeenCalledWith(
+      '17',
+      expect.objectContaining({ detail: '50 đường 30/4', ghn_ward_code: '21012' }),
+    )
+    expect(addressApiMocks.getCustomerAddresses).toHaveBeenCalledTimes(2)
+
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLButtonElement>('button[aria-label="Đặt địa chỉ của Nguyễn Minh Anh làm mặc định"]')?.click()
+    await flushPromises()
+    expect(addressApiMocks.setDefaultCustomerAddress.mock.calls[0]?.[0]).toBe('18')
+    expect(addressApiMocks.getCustomerAddresses).toHaveBeenCalledTimes(3)
+  })
+
+  it('creates a persisted address with exact location identifiers and skips demo OTP', async () => {
+    const { wrapper } = await mountCheckout('first-time', true, [])
+
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await flushPromises()
+    setInput('#checkout-full-name', 'Trần Ngọc Mai')
+    await nextTick()
+    setInput('#checkout-phone', '0912345678')
+    await nextTick()
+    setSelect('#checkout-province', '91')
+    await flushPromises()
+    setSelect('#checkout-district', '1442')
+    await flushPromises()
+    setSelect('#checkout-ward', '21012')
+    await nextTick()
+    setInput('#checkout-address-detail', '25 đường Mậu Thân')
+    await nextTick()
+    findDocumentButton('Lưu địa chỉ').click()
+    await flushPromises()
+
+    expect(addressApiMocks.createCustomerAddress.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      ghn_province_id: 91,
+      ghn_district_id: 1442,
+      ghn_ward_code: '21012',
+    }))
+    expect(addressApiMocks.getCustomerAddresses).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-selected-address]').text()).toContain('25 đường Mậu Thân')
+  })
 
   it('navigates from Cart to Checkout by SPA and provides a back-to-cart action', async () => {
     const router = createAppRouter(createMemoryHistory())
@@ -229,7 +347,7 @@ describe('customer checkout foundation', () => {
     const { wrapper } = await mountCheckout()
 
     expect(document.querySelector('[data-address-dialog]')).not.toBeNull()
-    expect(document.body.textContent).toContain('Thêm địa chỉ mới')
+    expect(document.body.textContent).toContain('Địa chỉ nhận hàng')
     expect(wrapper.get('[data-place-order-desktop]').attributes('disabled')).toBeDefined()
     expect(locationApiMocks.listLocationProvinces).toHaveBeenCalledTimes(1)
     expect(document.querySelector<HTMLSelectElement>('#checkout-province')?.textContent).toContain('Cần Thơ')
@@ -367,64 +485,51 @@ describe('customer checkout foundation', () => {
     expect(document.querySelector<HTMLSelectElement>('#checkout-ward')?.textContent).toContain('Xuân Khánh')
   })
 
-  it('opens OTP only after a valid address and rejects a wrong code', async () => {
-    await mountCheckout()
-    await completeAddressForm()
-
-    expect(document.querySelector('[data-address-dialog]')).toBeNull()
-    expect(document.querySelector('[data-otp-dialog]')).not.toBeNull()
-
-    setInput('#checkout-otp', '111111')
-    await nextTick()
-    findDocumentButton('Xác nhận').click()
-    await nextTick()
-
-    expect(document.querySelector('[data-otp-dialog] [role="alert"]')?.textContent).toContain('Mã xác thực chưa đúng')
-  })
-
-  it('accepts only numeric six-digit OTP and verifies with 123456', async () => {
+  it('persists a valid address and selects it without a local verification step', async () => {
     const { wrapper } = await mountCheckout()
     await completeAddressForm()
 
-    const otp = setInput('#checkout-otp', '12ab345678')
-    await nextTick()
-    expect(otp.value).toBe('123456')
-    findDocumentButton('Xác nhận').click()
-    await nextTick()
-
-    expect(document.querySelector('[data-otp-dialog]')?.closest('[role="dialog"]')?.getAttribute('data-state')).toBe('closed')
+    expect(addressApiMocks.createCustomerAddress).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[data-address-dialog]')).toBeNull()
     expect(wrapper.get('[data-selected-address]').text()).toContain('Trần Ngọc Mai')
-    expect(wrapper.get('[data-selected-address]').text()).toContain('đã xác thực local')
+    expect(wrapper.get('[data-selected-address]').text()).toContain('đã lưu trong tài khoản')
     expect(wrapper.get('[data-selected-address]').attributes('data-ghn-province-id')).toBe('91')
     expect(wrapper.get('[data-selected-address]').attributes('data-ghn-district-id')).toBe('1442')
     expect(wrapper.get('[data-selected-address]').attributes('data-ghn-ward-code')).toBe('21012')
     expect(wrapper.get('[data-place-order-desktop]').attributes('disabled')).toBeUndefined()
   })
 
-  it('returns to the address form, preserves non-phone fields, and focuses phone', async () => {
+  it('maps backend address validation errors to the matching form inputs', async () => {
+    addressApiMocks.createCustomerAddress.mockRejectedValueOnce({
+      name: 'ApplicationError',
+      kind: 'validation',
+      message: 'Dữ liệu địa chỉ chưa hợp lệ.',
+      validationErrors: {
+        recipient_name: ['Tên người nhận đã được backend từ chối.'],
+        recipient_phone: ['Số điện thoại đã được backend từ chối.'],
+        province: ['Tỉnh/Thành phố đã được backend từ chối.'],
+        district: ['Quận/Huyện đã được backend từ chối.'],
+        ward: ['Phường/Xã đã được backend từ chối.'],
+        address_line: ['Địa chỉ chi tiết đã được backend từ chối.'],
+      },
+      cause: null,
+    })
     await mountCheckout()
     await completeAddressForm()
 
-    findDocumentButton('Đổi số điện thoại').click()
-    await nextTick()
-    await nextTick()
-
-    expect(document.querySelector<HTMLInputElement>('#checkout-full-name')?.value).toBe('Trần Ngọc Mai')
-    expect(document.querySelector<HTMLInputElement>('#checkout-address-detail')?.value).toBe('25 đường Mậu Thân')
-    expect(document.activeElement?.id).toBe('checkout-phone')
-  })
-
-  it('rate-limits OTP resend locally with a countdown and performs no request', async () => {
-    const fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy)
-    const openSpy = vi.spyOn(XMLHttpRequest.prototype, 'open')
-    await mountCheckout()
-    await completeAddressForm()
-
-    const resend = findDocumentButton('Gửi lại mã sau 30s')
-    expect(resend.disabled).toBe(true)
-    expect(fetchSpy).not.toHaveBeenCalled()
-    expect(openSpy).not.toHaveBeenCalled()
+    expect(document.querySelector('#checkout-full-name-error')?.textContent)
+      .toContain('Tên người nhận đã được backend từ chối.')
+    expect(document.querySelector('#checkout-phone-error')?.textContent)
+      .toContain('Số điện thoại đã được backend từ chối.')
+    expect(document.querySelector('#checkout-province-error')?.textContent)
+      .toContain('Tỉnh/Thành phố đã được backend từ chối.')
+    expect(document.querySelector('#checkout-district-error')?.textContent)
+      .toContain('Quận/Huyện đã được backend từ chối.')
+    expect(document.querySelector('#checkout-ward-error')?.textContent)
+      .toContain('Phường/Xã đã được backend từ chối.')
+    expect(document.querySelector('#checkout-detail-error')?.textContent)
+      .toContain('Địa chỉ chi tiết đã được backend từ chối.')
+    expect(document.activeElement?.id).toBe('checkout-full-name')
   })
 
   it('does not auto-open an address dialog when saved addresses exist', async () => {
@@ -440,18 +545,97 @@ describe('customer checkout foundation', () => {
 
     await wrapper.get('[data-delivery-section] button').trigger('click')
     await nextTick()
-    const officeRadio = document.querySelector<HTMLInputElement>('input[value="address-office"]')
+    const officeRadio = document.querySelector<HTMLInputElement>('input[value="18"]')
     expect(officeRadio).not.toBeNull()
     officeRadio?.click()
     findDocumentButton('Dùng địa chỉ này').click()
     await nextTick()
-    expect(wrapper.get('[data-selected-address]').text()).toContain('Văn phòng')
+    expect(wrapper.get('[data-selected-address]').text()).toContain('12 Nguyễn Văn Linh')
 
     await wrapper.get('[data-delivery-section] button').trigger('click')
     await nextTick()
     findDocumentButton('Thêm địa chỉ khác').click()
     await nextTick()
     expect(document.querySelector('[data-address-form]')).not.toBeNull()
+  })
+
+  it('preserves the checkout selection when the address selector is reopened', async () => {
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('input[value="18"]')?.click()
+    findDocumentButton('Dùng địa chỉ này').click()
+    await nextTick()
+
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+
+    expect(document.querySelector<HTMLInputElement>('input[value="18"]')?.checked).toBe(true)
+    expect(document.querySelector<HTMLInputElement>('input[value="17"]')?.checked).toBe(false)
+  })
+
+  it('clears a previous address mutation error before starting another action', async () => {
+    addressApiMocks.deleteCustomerAddress.mockRejectedValueOnce(
+      new Error('Không thể xóa địa chỉ.'),
+    )
+    const { wrapper } = await mountCheckout('existing')
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Xóa địa chỉ"]')?.click()
+    await flushPromises()
+    expect(document.querySelector('[data-address-error]')).not.toBeNull()
+
+    findDocumentButton('Thêm địa chỉ khác').click()
+    await nextTick()
+
+    expect(document.querySelector('[data-address-mutation-error]')).toBeNull()
+    expect(document.querySelector('[data-address-form]')).not.toBeNull()
+  })
+
+  it('deletes a selected address and falls back to the default remaining address', async () => {
+    const addressesWithSecondSelected = [
+      savedAddresses[0]!,
+      savedAddresses[1]!,
+    ]
+    const { wrapper } = await mountCheckout('existing', false, addressesWithSecondSelected)
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('input[value="18"]')?.click()
+    findDocumentButton('Dùng địa chỉ này').click()
+    await nextTick()
+    expect(wrapper.get('[data-selected-address]').text()).toContain('12 Nguyễn Văn Linh')
+
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    const deleteButtons = [...document.querySelectorAll<HTMLButtonElement>('button[aria-label^="Xóa địa chỉ"]')]
+    deleteButtons[1]?.click()
+    await flushPromises()
+
+    expect(addressApiMocks.deleteCustomerAddress.mock.calls[0]?.[0]).toBe('18')
+    expect(addressApiMocks.getCustomerAddresses).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-selected-address]').text()).toContain('48 đường 30/4')
+    expect(document.querySelector<HTMLInputElement>('input[value="18"]')).toBeNull()
+  })
+
+  it('shows delete pending and error states without removing the address', async () => {
+    let rejectDelete: ((error: Error) => void) | undefined
+    addressApiMocks.deleteCustomerAddress.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectDelete = reject
+    }))
+    const { wrapper } = await mountCheckout('existing')
+    await wrapper.get('[data-delivery-section] button').trigger('click')
+    await nextTick()
+    const deleteButton = document.querySelector<HTMLButtonElement>('button[aria-label^="Xóa địa chỉ"]')!
+    deleteButton.click()
+    await nextTick()
+    expect(deleteButton.textContent).toContain('Đang xóa')
+    expect(deleteButton.disabled).toBe(true)
+
+    rejectDelete?.(new Error('Không thể xóa địa chỉ.'))
+    await flushPromises()
+    expect(document.querySelector('[data-address-error]')?.textContent).toContain('Không thể xóa địa chỉ')
+    expect(document.querySelector<HTMLInputElement>('input[value="17"]')).not.toBeNull()
   })
 
   it('switches between delivery and pickup and makes pickup shipping free', async () => {
@@ -664,7 +848,6 @@ describe('customer checkout foundation', () => {
     const source = [
       readFileSync('src/pages/customer/CheckoutPage.vue', 'utf8'),
       readFileSync('src/components/checkout/CheckoutAddressDialog.vue', 'utf8'),
-      readFileSync('src/components/checkout/CheckoutOtpDialog.vue', 'utf8'),
       readFileSync('src/components/checkout/CheckoutVoucherDialog.vue', 'utf8'),
       readFileSync('src/components/checkout/CheckoutPaymentDialog.vue', 'utf8'),
       readFileSync('src/data/customer/checkoutDemoData.ts', 'utf8'),

@@ -87,14 +87,13 @@ export interface CheckoutAddressDraft {
   provinceName: string
   districtName: string
   wardName: string
+  hamlet?: string
   detail: string
-  type: 'home' | 'office'
   isDefault: boolean
 }
 
 export interface CheckoutAddress extends CheckoutAddressDraft {
   readonly id: string
-  readonly phoneVerified: boolean
 }
 
 export interface CheckoutProduct {
@@ -160,7 +159,6 @@ export interface CheckoutTotals {
 
 export interface CheckoutScenarioData {
   readonly viewState: CheckoutViewState
-  readonly addresses: readonly CheckoutAddress[]
   readonly products: readonly CheckoutProduct[]
   readonly result: CheckoutResultKind
 }

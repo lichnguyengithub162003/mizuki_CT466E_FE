@@ -1,6 +1,5 @@
 import { productListingProducts } from '@/data/products/productListingDemoData'
 import type {
-  CheckoutAddress,
   CheckoutAddressDraft,
   CheckoutBranch,
   CheckoutPaymentMethod,
@@ -21,42 +20,8 @@ export const emptyCheckoutAddressDraft: CheckoutAddressDraft = {
   districtName: '',
   wardName: '',
   detail: '',
-  type: 'home',
   isDefault: true,
 }
-
-export const checkoutSavedAddresses: readonly CheckoutAddress[] = [
-  {
-    id: 'address-home',
-    fullName: 'Nguyễn Minh Anh',
-    phone: '0912345678',
-    ghn_province_id: 220,
-    ghn_district_id: 1572,
-    ghn_ward_code: '550113',
-    provinceName: 'Cần Thơ',
-    districtName: 'Quận Ninh Kiều',
-    wardName: 'Phường Xuân Khánh',
-    detail: '48 đường 30/4',
-    type: 'home',
-    isDefault: true,
-    phoneVerified: true,
-  },
-  {
-    id: 'address-office',
-    fullName: 'Nguyễn Minh Anh',
-    phone: '0987654321',
-    ghn_province_id: 220,
-    ghn_district_id: 1574,
-    ghn_ward_code: '550302',
-    provinceName: 'Cần Thơ',
-    districtName: 'Quận Cái Răng',
-    wardName: 'Phường Hưng Phú',
-    detail: '12 Nguyễn Văn Linh',
-    type: 'office',
-    isDefault: false,
-    phoneVerified: true,
-  },
-]
 
 export const checkoutShippingOptions: readonly CheckoutShippingOption[] = [
   {
@@ -247,7 +212,6 @@ export function createCheckoutScenario(scenario: CheckoutScenario): CheckoutScen
         : scenario === 'error'
           ? 'error'
           : 'success',
-    addresses: scenario === 'first-time' ? [] : checkoutSavedAddresses,
     products: scenario === 'empty'
       ? []
       : scenario === 'unavailable'

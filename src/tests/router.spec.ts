@@ -23,6 +23,14 @@ vi.mock('@/api/locations/locationApi', () => ({
   listLocationWards: vi.fn().mockResolvedValue([]),
 }))
 
+vi.mock('@/api/addressApi', () => ({
+  getCustomerAddresses: vi.fn().mockResolvedValue([]),
+  createCustomerAddress: vi.fn(),
+  updateCustomerAddress: vi.fn(),
+  setDefaultCustomerAddress: vi.fn(),
+  deleteCustomerAddress: vi.fn(),
+}))
+
 describe('foundation router', () => {
   it('renders foundation and all public customer routes', async () => {
     useAuthStore(pinia).resetForTesting()

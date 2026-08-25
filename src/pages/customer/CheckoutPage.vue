@@ -10,11 +10,10 @@ import {
   Truck,
   WalletCards,
 } from '@lucide/vue'
-import { computed, nextTick, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   CheckoutAddressDialog,
-  CheckoutOtpDialog,
   CheckoutPaymentDialog,
   CheckoutVoucherDialog,
 } from '@/components/checkout'
@@ -29,6 +28,15 @@ import {
   createCheckoutScenario,
 } from '@/data/customer/checkoutDemoData'
 import CustomerLayout from '@/layouts/CustomerLayout.vue'
+import {
+  useCreateCustomerAddressMutation,
+  useCustomerAddressesQuery,
+  useDeleteCustomerAddressMutation,
+  useSetDefaultCustomerAddressMutation,
+  useUpdateCustomerAddressMutation,
+} from '@/queries/addresses'
+import { useAuthStore } from '@/stores/auth'
+import { pinia } from '@/stores/pinia'
 import type {
   CheckoutAddress,
   CheckoutAddressDraft,
@@ -38,28 +46,24 @@ import type {
   CheckoutVoucher,
   FulfillmentMethod,
 } from '@/types/customer'
+import { customerAddressFormErrors } from '@/types/addresses'
+import type { ApiValidationErrors } from '@/types/api'
 import { cn } from '@/utils/cn'
 
-const props = withDefaults(
-  defineProps<{
-    scenario?: CheckoutScenario
-  }>(),
-  {
-    scenario: 'first-time',
-  },
-)
+const props = defineProps<{
+  scenario?: CheckoutScenario
+}>()
 
-const scenarioData = createCheckoutScenario(props.scenario)
+const scenarioData = createCheckoutScenario(props.scenario ?? 'existing')
+const authStore = useAuthStore(pinia)
+const userId = computed(() => authStore.user?.id ?? null)
 const viewState = ref(scenarioData.viewState)
-const addresses = ref<CheckoutAddress[]>(scenarioData.addresses.map((address) => ({ ...address })))
+const addresses = ref<CheckoutAddress[]>([])
 const products = ref([...scenarioData.products])
 const selectedAddressId = ref(addresses.value[0]?.id ?? '')
 const addressDraft = ref<CheckoutAddressDraft>({ ...emptyCheckoutAddressDraft })
-const addressDialogOpen = ref(
-  viewState.value === 'success' && products.value.length > 0 && addresses.value.length === 0,
-)
-const addressDialogStartInForm = ref(addresses.value.length === 0)
-const otpDialogOpen = ref(false)
+const addressDialogOpen = ref(false)
+const addressDialogStartInForm = ref(false)
 const voucherDialogOpen = ref(false)
 const paymentDialogOpen = ref(false)
 const fulfillment = ref<FulfillmentMethod>('delivery')
@@ -76,7 +80,38 @@ const resultDialogOpen = ref(false)
 const nextResultKind = ref(scenarioData.result)
 const orderPlaceholderVisible = ref(false)
 let submitTimer: number | undefined
-let localAddressCount = 0
+
+const addressesQuery = useCustomerAddressesQuery(userId)
+const createAddressMutation = useCreateCustomerAddressMutation(userId)
+const updateAddressMutation = useUpdateCustomerAddressMutation(userId)
+const setDefaultAddressMutation = useSetDefaultCustomerAddressMutation(userId)
+const deleteAddressMutation = useDeleteCustomerAddressMutation(userId)
+
+watch(
+  () => addressesQuery.data.value,
+  (serverAddresses) => {
+    if (!serverAddresses) return
+    addresses.value = [...serverAddresses]
+    const currentStillExists = serverAddresses.some(
+      (address) => address.id === selectedAddressId.value,
+    )
+    if (!currentStillExists) {
+      selectedAddressId.value = serverAddresses.find((address) => address.isDefault)?.id
+        ?? serverAddresses[0]?.id
+        ?? ''
+    }
+    if (
+      serverAddresses.length === 0
+      && viewState.value === 'success'
+      && products.value.length > 0
+    ) {
+      addressDraft.value = { ...emptyCheckoutAddressDraft, isDefault: true }
+      addressDialogStartInForm.value = true
+      addressDialogOpen.value = true
+    }
+  },
+  { immediate: true },
+)
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN', {
   style: 'currency',
@@ -162,7 +197,7 @@ const canPlaceOrder = computed(() => {
   if (isSubmitting.value || products.value.length === 0 || hasUnavailableProduct.value) return false
   if (!paymentMethodId.value || !selectedPayment.value?.available) return false
   if (fulfillment.value === 'delivery') {
-    return Boolean(selectedAddress.value?.phoneVerified)
+    return Boolean(selectedAddress.value)
   }
   return Boolean(selectedBranch.value?.available)
 })
@@ -170,6 +205,7 @@ const canPlaceOrder = computed(() => {
 function addressText(address: CheckoutAddress): string {
   return [
     address.detail,
+    address.hamlet,
     address.wardName,
     address.districtName,
     address.provinceName,
@@ -177,38 +213,102 @@ function addressText(address: CheckoutAddress): string {
 }
 
 function openAddressSelector(): void {
+  resetAddressMutationErrors()
   addressDialogStartInForm.value = addresses.value.length === 0
+  addressDraft.value = { ...emptyCheckoutAddressDraft, isDefault: addresses.value.length === 0 }
   addressDialogOpen.value = true
 }
 
-function handleAddressContinue(draft: CheckoutAddressDraft): void {
+async function handleAddressContinue(draft: CheckoutAddressDraft): Promise<void> {
+  if (addressSaving.value) return
+  resetAddressMutationErrors()
   addressDraft.value = { ...draft }
-  addressDialogOpen.value = false
-  otpDialogOpen.value = true
-}
-
-function handleAddressVerified(): void {
-  localAddressCount += 1
-  const newAddress: CheckoutAddress = {
-    ...addressDraft.value,
-    id: `local-address-${localAddressCount}`,
-    phoneVerified: true,
+  try {
+    const savedAddress = draft.id
+      ? await updateAddressMutation.mutateAsync(draft)
+      : await createAddressMutation.mutateAsync(draft)
+    selectedAddressId.value = savedAddress.id
+    addressDialogOpen.value = false
+  } catch {
+    // The mutation owns the normalized error shown in the dialog.
   }
-
-  addresses.value = newAddress.isDefault
-    ? [...addresses.value.map((address) => ({ ...address, isDefault: false })), newAddress]
-    : [...addresses.value, newAddress]
-  selectedAddressId.value = newAddress.id
-  otpDialogOpen.value = false
 }
 
-async function handleChangePhone(): Promise<void> {
-  otpDialogOpen.value = false
-  addressDialogStartInForm.value = true
-  addressDialogOpen.value = true
-  await nextTick()
-  await nextTick()
-  document.getElementById('checkout-phone')?.focus()
+function handleAddressEdit(address: CheckoutAddress): void {
+  resetAddressMutationErrors()
+  addressDraft.value = { ...address }
+}
+
+async function handleSetDefaultAddress(id: string): Promise<void> {
+  if (addressSaving.value) return
+  resetAddressMutationErrors()
+  try {
+    const address = await setDefaultAddressMutation.mutateAsync(id)
+    selectedAddressId.value = address.id
+  } catch {
+    // The mutation owns the normalized error shown in the dialog.
+  }
+}
+
+async function handleDeleteAddress(id: string): Promise<void> {
+  if (addressSaving.value) return
+  resetAddressMutationErrors()
+  const remainingAddresses = addresses.value.filter((address) => address.id !== id)
+  try {
+    await deleteAddressMutation.mutateAsync(id)
+    if (selectedAddressId.value === id) {
+      selectedAddressId.value = remainingAddresses.find((address) => address.isDefault)?.id
+        ?? remainingAddresses[0]?.id
+        ?? ''
+    }
+  } catch {
+    // The mutation owns the normalized error shown in the dialog.
+  }
+}
+
+const addressErrorMessage = computed(() => {
+  const error = createAddressMutation.error.value
+    ?? updateAddressMutation.error.value
+    ?? setDefaultAddressMutation.error.value
+    ?? deleteAddressMutation.error.value
+    ?? addressesQuery.error.value
+  if (!error) return ''
+  if (typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return 'Không thể xử lý địa chỉ. Vui lòng thử lại.'
+})
+
+function readValidationErrors(error: unknown): ApiValidationErrors | undefined {
+  if (
+    typeof error !== 'object'
+    || error === null
+    || !('validationErrors' in error)
+    || typeof error.validationErrors !== 'object'
+    || error.validationErrors === null
+  ) {
+    return undefined
+  }
+  return error.validationErrors as ApiValidationErrors
+}
+
+const addressServerErrors = computed(() => {
+  const error = createAddressMutation.error.value ?? updateAddressMutation.error.value
+  return customerAddressFormErrors(readValidationErrors(error))
+})
+
+const addressSaving = computed(() =>
+  createAddressMutation.isPending.value
+  || updateAddressMutation.isPending.value
+  || setDefaultAddressMutation.isPending.value
+  || deleteAddressMutation.isPending.value,
+)
+
+function resetAddressMutationErrors(): void {
+  createAddressMutation.reset()
+  updateAddressMutation.reset()
+  setDefaultAddressMutation.reset()
+  deleteAddressMutation.reset()
 }
 
 function selectAddress(id: string): void {
@@ -362,8 +462,17 @@ onUnmounted(clearSubmitTimer)
                   {{ selectedAddress ? 'Thay đổi' : 'Thêm địa chỉ' }}
                 </button>
               </div>
+              <div v-if="addressesQuery.isPending.value" class="mt-3 rounded-2xl bg-muted p-4 text-body-sm text-text-secondary" role="status" data-address-loading>
+                Đang tải địa chỉ đã lưu...
+              </div>
+              <div v-else-if="addressesQuery.isError.value" class="mt-3 rounded-2xl bg-destructive/10 p-4 text-body-sm text-destructive" role="alert" data-address-error>
+                <p>{{ addressErrorMessage }}</p>
+                <button type="button" class="mt-2 min-h-9 font-semibold underline underline-offset-2" @click="addressesQuery.refetch()">
+                  Thử tải lại địa chỉ
+                </button>
+              </div>
               <div
-                v-if="selectedAddress"
+                v-else-if="selectedAddress"
                 class="mt-3 rounded-2xl bg-primary-50 p-4"
                 data-selected-address
                 :data-ghn-province-id="selectedAddress.ghn_province_id ?? undefined"
@@ -373,19 +482,16 @@ onUnmounted(clearSubmitTimer)
                 <div class="flex flex-wrap items-center gap-2">
                   <strong class="text-primary-950">{{ selectedAddress.fullName }}</strong>
                   <span class="text-body-sm text-text-secondary">{{ selectedAddress.phone }}</span>
-                  <span class="rounded-full bg-white px-2 py-1 text-caption font-semibold text-primary-800">
-                    {{ selectedAddress.type === 'home' ? 'Nhà riêng' : 'Văn phòng' }}
-                  </span>
                   <span v-if="selectedAddress.isDefault" class="rounded-full bg-primary-700 px-2 py-1 text-caption font-semibold text-white">Mặc định</span>
                 </div>
                 <p class="mt-2 text-body-sm leading-5 text-text-secondary">{{ addressText(selectedAddress) }}</p>
                 <p class="mt-2 inline-flex items-center gap-1 text-caption font-semibold text-primary-700">
                   <BadgeCheck class="size-4" aria-hidden="true" />
-                  Số điện thoại đã xác thực local
+                  Địa chỉ đã lưu trong tài khoản
                 </p>
               </div>
               <div v-else class="mt-3 rounded-2xl border border-dashed border-primary-200 p-4 text-body-sm text-text-secondary" data-address-required>
-                Hoàn tất địa chỉ và xác thực số điện thoại để đặt hàng.
+                Thêm địa chỉ nhận hàng để tiếp tục.
               </div>
 
               <fieldset class="mt-4 grid gap-2">
@@ -578,15 +684,21 @@ onUnmounted(clearSubmitTimer)
         v-model="addressDialogOpen"
         v-model:draft="addressDraft"
         :addresses="addresses"
+        :selected-id="selectedAddressId"
         :start-in-form="addressDialogStartInForm"
+        :loading="addressesQuery.isPending.value"
+        :saving="addressSaving"
+        :deleting-id="deleteAddressMutation.isPending.value
+          ? deleteAddressMutation.variables.value
+          : undefined"
+        :error-message="addressErrorMessage"
+        :server-errors="addressServerErrors"
         @continue="handleAddressContinue"
         @select="selectAddress"
-      />
-      <CheckoutOtpDialog
-        v-model="otpDialogOpen"
-        :phone="addressDraft.phone"
-        @verified="handleAddressVerified"
-        @change-phone="handleChangePhone"
+        @edit="handleAddressEdit"
+        @set-default="handleSetDefaultAddress"
+        @delete="handleDeleteAddress"
+        @reset-error="resetAddressMutationErrors"
       />
       <CheckoutVoucherDialog
         v-model="voucherDialogOpen"

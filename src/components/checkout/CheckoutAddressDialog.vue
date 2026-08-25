@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MapPin, Plus } from '@lucide/vue'
+import { MapPin, Pencil, Plus, Star, Trash2 } from '@lucide/vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import {
@@ -8,29 +8,38 @@ import {
   useLocationWardsQuery,
 } from '@/queries/locations/locationQueries'
 import type { CheckoutAddress, CheckoutAddressDraft } from '@/types/customer'
+import type { CustomerAddressFormErrors } from '@/types/addresses'
 
-interface AddressErrors {
-  fullName?: string
-  phone?: string
-  province?: string
-  district?: string
-  ward?: string
-  detail?: string
-}
+type AddressErrors = CustomerAddressFormErrors
 
 const props = withDefaults(
   defineProps<{
     addresses: readonly CheckoutAddress[]
+    selectedId?: string
     startInForm?: boolean
+    loading?: boolean
+    saving?: boolean
+    errorMessage?: string
+    serverErrors?: CustomerAddressFormErrors
+    deletingId?: string
   }>(),
   {
     startInForm: false,
+    selectedId: '',
+    loading: false,
+    saving: false,
+    errorMessage: '',
+    deletingId: '',
   },
 )
 
 const emit = defineEmits<{
   continue: [address: CheckoutAddressDraft]
   select: [id: string]
+  edit: [address: CheckoutAddress]
+  setDefault: [id: string]
+  delete: [id: string]
+  resetError: []
 }>()
 
 const open = defineModel<boolean>({ default: false })
@@ -72,8 +81,29 @@ const wardLoading = computed(() =>
 watch(open, (isOpen) => {
   if (!isOpen) return
   view.value = props.startInForm || props.addresses.length === 0 ? 'form' : 'list'
-  selectedAddressId.value = props.addresses[0]?.id ?? ''
+  selectedAddressId.value = props.addresses.find((address) => address.id === props.selectedId)?.id
+    ?? props.addresses.find((address) => address.isDefault)?.id
+    ?? props.addresses[0]?.id
+    ?? ''
   clearErrors()
+})
+
+watch(() => props.addresses, (addresses) => {
+  if (addresses.some((address) => address.id === selectedAddressId.value)) return
+  selectedAddressId.value = addresses.find((address) => address.isDefault)?.id
+    ?? addresses[0]?.id
+    ?? ''
+})
+
+watch(() => props.serverErrors, async (serverErrors) => {
+  clearErrors()
+  if (!serverErrors || Object.keys(serverErrors).length === 0) return
+  Object.assign(errors, serverErrors)
+  await nextTick()
+  const firstInvalid = document.querySelector<HTMLElement>(
+    '[data-address-form] [aria-invalid="true"]',
+  )
+  firstInvalid?.focus()
 })
 
 function clearErrors(): void {
@@ -163,6 +193,7 @@ function validate(): boolean {
 }
 
 async function submitAddress(): Promise<void> {
+  if (props.saving) return
   if (!validate()) {
     await nextTick()
     const firstInvalid = document.querySelector<HTMLElement>('[data-address-form] [aria-invalid="true"]')
@@ -184,9 +215,36 @@ function confirmSelection(): void {
   open.value = false
 }
 
+function editAddress(address: CheckoutAddress): void {
+  if (props.saving) return
+  emit('resetError')
+  draft.value = { ...address }
+  view.value = 'form'
+  emit('edit', address)
+}
+
+function startNewAddress(): void {
+  if (props.saving) return
+  emit('resetError')
+  draft.value = {
+    fullName: '',
+    phone: '',
+    ghn_province_id: null,
+    ghn_district_id: null,
+    ghn_ward_code: '',
+    provinceName: '',
+    districtName: '',
+    wardName: '',
+    detail: '',
+    isDefault: props.addresses.length === 0,
+  }
+  view.value = 'form'
+}
+
 function fullAddress(address: CheckoutAddress): string {
   return [
     address.detail,
+    address.hamlet,
     address.wardName,
     address.districtName,
     address.provinceName,
@@ -210,39 +268,80 @@ function queryErrorMessage(error: unknown): string {
 <template>
   <BaseDialog
     v-model="open"
-    title="Thêm địa chỉ mới"
-    description="Thông tin chỉ được lưu trong phiên checkout demo này."
+    :title="draft.id ? 'Cập nhật địa chỉ' : 'Địa chỉ nhận hàng'"
+    description="Địa chỉ được lưu vào tài khoản và dùng cho đơn hàng này."
     close-label="Đóng thêm địa chỉ"
     class="max-w-2xl"
   >
     <div data-address-dialog>
       <div v-if="view === 'list'" class="grid gap-3" data-address-list>
-        <label
+        <p v-if="props.loading" class="rounded-xl bg-muted p-4 text-body-sm text-text-secondary" role="status" data-address-loading>
+          Đang tải địa chỉ đã lưu...
+        </p>
+        <p v-else-if="props.errorMessage" class="rounded-xl bg-destructive/10 p-4 text-body-sm text-destructive" role="alert" data-address-error>
+          {{ props.errorMessage }}
+        </p>
+        <div
           v-for="address in props.addresses"
           :key="address.id"
-          class="flex cursor-pointer items-start gap-3 rounded-2xl border border-primary-100 p-4 has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50"
+          class="rounded-2xl border border-primary-100 p-4 has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50"
         >
-          <input
-            v-model="selectedAddressId"
-            type="radio"
-            name="checkout-address"
-            :value="address.id"
-            class="mt-1 size-4 accent-primary"
-          />
-          <span class="min-w-0">
-            <strong class="text-body-md text-primary-950">{{ address.fullName }}</strong>
-            <span class="ml-2 text-body-sm text-text-secondary">{{ address.phone }}</span>
-            <span class="mt-1 block text-body-sm leading-5 text-text-secondary">{{ fullAddress(address) }}</span>
-            <span class="mt-2 inline-flex rounded-full bg-primary-100 px-2 py-1 text-caption font-semibold text-primary-800">
-              {{ address.type === 'home' ? 'Nhà riêng' : 'Văn phòng' }}
-              <template v-if="address.isDefault"> · Mặc định</template>
+          <label class="flex cursor-pointer items-start gap-3">
+            <input
+              v-model="selectedAddressId"
+              type="radio"
+              name="checkout-address"
+              :value="address.id"
+              class="mt-1 size-4 accent-primary"
+            />
+            <span class="min-w-0 flex-1">
+              <strong class="text-body-md text-primary-950">{{ address.fullName }}</strong>
+              <span class="ml-2 text-body-sm text-text-secondary">{{ address.phone }}</span>
+              <span class="mt-1 block text-body-sm leading-5 text-text-secondary">{{ fullAddress(address) }}</span>
+              <span v-if="address.isDefault" class="mt-2 inline-flex rounded-full bg-primary-100 px-2 py-1 text-caption font-semibold text-primary-800">
+                Mặc định
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+          <div class="mt-2 flex flex-wrap gap-2 pl-7">
+            <button
+              type="button"
+              class="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-caption font-semibold text-primary-800 hover:bg-primary-50"
+              :disabled="props.saving"
+              :aria-label="`Sửa địa chỉ của ${address.fullName}`"
+              @click="editAddress(address)"
+            >
+              <Pencil class="size-3.5" aria-hidden="true" />
+              Sửa
+            </button>
+            <button
+              v-if="!address.isDefault"
+              type="button"
+              class="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-caption font-semibold text-primary-800 hover:bg-primary-50"
+              :disabled="props.saving"
+              :aria-label="`Đặt địa chỉ của ${address.fullName} làm mặc định`"
+              @click="emit('setDefault', address.id)"
+            >
+              <Star class="size-3.5" aria-hidden="true" />
+              Đặt mặc định
+            </button>
+            <button
+              type="button"
+              class="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-caption font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50"
+              :disabled="props.saving"
+              :aria-label="`Xóa địa chỉ của ${address.fullName}`"
+              @click="emit('delete', address.id)"
+            >
+              <Trash2 class="size-3.5" aria-hidden="true" />
+              {{ props.deletingId === address.id ? 'Đang xóa...' : 'Xóa' }}
+            </button>
+          </div>
+        </div>
         <button
           type="button"
           class="motion-interactive inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-primary-200 text-body-sm font-semibold text-primary-900 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          @click="view = 'form'"
+          :disabled="props.saving"
+          @click="startNewAddress"
         >
           <Plus class="size-4" aria-hidden="true" />
           Thêm địa chỉ khác
@@ -258,6 +357,9 @@ function queryErrorMessage(error: unknown): string {
       </div>
 
       <form v-else class="grid gap-4" data-address-form novalidate @submit.prevent="submitAddress">
+        <p v-if="props.errorMessage" class="rounded-xl bg-destructive/10 p-3 text-body-sm text-destructive" role="alert" data-address-mutation-error>
+          {{ props.errorMessage }}
+        </p>
         <div class="grid gap-4 sm:grid-cols-2">
           <label class="grid gap-1.5 text-body-sm font-semibold text-primary-950">
             Họ và tên
@@ -422,34 +524,6 @@ function queryErrorMessage(error: unknown): string {
           <span v-if="errors.detail" id="checkout-detail-error" class="text-caption text-destructive">{{ errors.detail }}</span>
         </label>
 
-        <fieldset class="grid gap-2">
-          <legend class="text-body-sm font-semibold text-primary-950">Loại địa chỉ</legend>
-          <div class="flex gap-4">
-            <label class="inline-flex min-h-10 items-center gap-2">
-              <input
-                type="radio"
-                name="address-type"
-                value="home"
-                :checked="draft.type === 'home'"
-                class="size-4 accent-primary"
-                @change="updateField('type', 'home')"
-              />
-              Nhà riêng
-            </label>
-            <label class="inline-flex min-h-10 items-center gap-2">
-              <input
-                type="radio"
-                name="address-type"
-                value="office"
-                :checked="draft.type === 'office'"
-                class="size-4 accent-primary"
-                @change="updateField('type', 'office')"
-              />
-              Văn phòng
-            </label>
-          </div>
-        </fieldset>
-
         <label class="inline-flex min-h-11 items-center gap-3 text-body-sm font-medium">
           <input
             type="checkbox"
@@ -471,8 +545,9 @@ function queryErrorMessage(error: unknown): string {
           <button
             type="submit"
             class="motion-interactive min-h-11 rounded-xl bg-primary px-5 font-semibold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            :disabled="props.saving"
           >
-            Tiếp tục
+            {{ props.saving ? 'Đang lưu...' : (draft.id ? 'Lưu thay đổi' : 'Lưu địa chỉ') }}
           </button>
         </div>
       </form>

@@ -17,6 +17,10 @@ export const ENDPOINTS = {
     `/locations/provinces/${provinceId}/districts`,
   locationWards: (districtId: number) =>
     `/locations/districts/${districtId}/wards`,
+  customerAddresses: '/customer/addresses',
+  customerAddress: (addressId: string) => `/customer/addresses/${addressId}`,
+  customerAddressDefault: (addressId: string) =>
+    `/customer/addresses/${addressId}/default`,
   branches: '/branches',
   products: '/products',
 } as const
