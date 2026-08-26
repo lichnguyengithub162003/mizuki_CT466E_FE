@@ -115,6 +115,12 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer', requiresAuth: true },
   },
   {
+    path: '/payment/vnpay/return',
+    name: 'vnpay-return',
+    component: () => import('@/pages/customer/VnPayReturnPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
     path: ROUTE_PATHS.skinCare,
     name: ROUTE_NAMES.skinCare,
     component: () => import('@/pages/clinic/SkinCarePage.vue'),

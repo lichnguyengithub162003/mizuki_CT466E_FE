@@ -9,12 +9,14 @@ import {
   PackageCheck,
   PackageOpen,
   Sparkles,
+  Store,
   Tag,
   Truck,
 } from "@lucide/vue";
 import { useQueryClient } from "@tanstack/vue-query";
 import { computed, nextTick, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
+import { redirectToVnPay } from "@/api/vnpayApi";
 import {
   CheckoutAddressDialog,
   CheckoutPaymentDialog,
@@ -40,6 +42,10 @@ import {
   customerShippingQuoteKeys,
   useCustomerShippingQuoteQuery,
 } from "@/queries/shipping";
+import {
+  saveVnPayPaymentContext,
+  useInitiateVnPayPaymentMutation,
+} from "@/queries/vnpay";
 import { useAuthStore } from "@/stores/auth";
 import { useBranchPreferenceStore } from "@/stores/branchPreference";
 import { pinia } from "@/stores/pinia";
@@ -74,16 +80,12 @@ const paymentDialogOpen = ref(false);
 const voucherDialogOpen = ref(false);
 const selectedOrderVoucherId = ref("");
 const selectedShippingVoucherId = ref("");
+const fulfillment = ref<"delivery" | "pickup">("delivery");
 const supportedCheckoutPaymentMethods = checkoutPaymentMethods
   .filter((method) => ["cod", "vnpay"].includes(method.id))
-  .map((method) => {
-    if (method.id === "cod") return method;
-    return {
-      ...method,
-      available: false,
-      unavailableReason: "Thanh toán VNPay đang được cập nhật.",
-    };
-  });
+  .map((method) => method.id === "vnpay"
+    ? { ...method, available: true, unavailableReason: undefined }
+    : method);
 const paymentMethodId = ref(
   supportedCheckoutPaymentMethods.find((method) => method.id === "cod")?.id ??
     "",
@@ -92,20 +94,15 @@ const failedProductImageIds = ref<ReadonlySet<number>>(new Set<number>());
 const confirmationDialogOpen = ref(false);
 const confirmationSnapshot = ref<OrderConfirmationSnapshot | null>(null);
 const createdOrder = ref<CreatedCustomerOrder | null>(null);
+const pendingVnPayOrder = ref<CreatedCustomerOrder | null>(null);
 const orderNotice = ref("");
 const orderSucceeded = ref(false);
 const ORDER_ATTEMPT_STORAGE_PREFIX = "mizuki:checkout:create-order-attempt";
 
 interface OrderConfirmationSnapshot {
-  readonly addressId: number;
-  readonly quoteToken: string;
+  readonly payload: CreateCustomerOrderRequest;
   readonly expectedTotal: number;
 }
-
-type DeliveryOrderPayload = Extract<
-  CreateCustomerOrderRequest,
-  { readonly delivery_method: "delivery" }
->;
 
 interface CheckoutOrderAttempt {
   readonly fingerprint: string;
@@ -121,6 +118,7 @@ const setDefaultAddressMutation = useSetDefaultCustomerAddressMutation(userId);
 const deleteAddressMutation = useDeleteCustomerAddressMutation(userId);
 const cartQuery = useCustomerCartQuery(userId);
 const createOrderMutation = useCreateCustomerOrderMutation();
+const initiateVnPayMutation = useInitiateVnPayPaymentMutation();
 const cart = computed(() => cartQuery.data.value);
 const cartItems = computed(() => cart.value?.items ?? []);
 const cartBranch = computed(() => cart.value?.branch);
@@ -194,6 +192,7 @@ const shippingAddressId = computed(() => {
 });
 const shippingQuoteEnabled = computed(
   () =>
+    fulfillment.value === "delivery" &&
     !orderSucceeded.value &&
     cartItems.value.length > 0 &&
     shippingAddressId.value !== null &&
@@ -222,16 +221,21 @@ const selectedPayment = computed(() =>
     (method) => method.id === paymentMethodId.value,
   ),
 );
-const paymentPayloadValue = computed<"cash" | null>(() =>
-  paymentMethodId.value === "cod" ? "cash" : null,
-);
+const selectedPaymentLabel = computed(() => selectedPayment.value?.name);
+const paymentPayloadValue = computed<"cash" | "vnpay" | null>(() => {
+  if (paymentMethodId.value === "cod") return "cash";
+  if (paymentMethodId.value === "vnpay") return "vnpay";
+  return null;
+});
 const hasUnavailableProduct = computed(() =>
   cartItems.value.some(
     (item) => item.stockWarning || item.availableQuantity < item.quantity,
   ),
 );
 const shippingFee = computed<number | null>(() =>
-  shippingQuoteExpired.value
+  fulfillment.value === "pickup"
+    ? 0
+    : shippingQuoteExpired.value
     ? null
     : (shippingQuoteQuery.data.value?.shippingFee ?? null),
 );
@@ -272,6 +276,7 @@ const checkoutDataReady = computed(() => {
   if (!branchMatchesCart.value) return false;
   if (!paymentPayloadValue.value || !selectedPayment.value?.available)
     return false;
+  if (fulfillment.value === "pickup") return true;
   const quote = shippingQuoteQuery.data.value;
   return Boolean(
     selectedAddress.value &&
@@ -284,23 +289,26 @@ const checkoutDataReady = computed(() => {
   );
 });
 const canPlaceOrder = computed(
-  () => checkoutDataReady.value && !createOrderMutation.isPending.value,
+  () => checkoutDataReady.value
+    && !createOrderMutation.isPending.value
+    && !initiateVnPayMutation.isPending.value,
 );
 
 const checkoutReadinessMessage = computed(() => {
   if (userId.value === null) return "Vui lòng đăng nhập để đặt hàng.";
   if (!branchMatchesCart.value)
     return "Vui lòng kiểm tra lại chi nhánh của giỏ hàng.";
+  if (!paymentPayloadValue.value)
+    return "Vui lòng chọn phương thức thanh toán được hỗ trợ.";
+  if (hasUnavailableProduct.value)
+    return "Vui lòng điều chỉnh sản phẩm chưa đủ tồn kho.";
+  if (fulfillment.value === "pickup") return "";
   if (!selectedAddress.value) return "Vui lòng chọn địa chỉ nhận hàng.";
   if (shippingQuoteQuery.isFetching.value)
     return "Đang cập nhật báo giá vận chuyển.";
   if (shippingQuoteQuery.isError.value)
     return "Vui lòng lấy lại báo giá vận chuyển.";
   if (shippingQuoteExpired.value) return "Báo giá vận chuyển đã hết hạn.";
-  if (!paymentPayloadValue.value)
-    return "Vui lòng chọn phương thức thanh toán được hỗ trợ.";
-  if (hasUnavailableProduct.value)
-    return "Vui lòng điều chỉnh sản phẩm chưa đủ tồn kho.";
   return "";
 });
 
@@ -376,6 +384,12 @@ const orderErrorMessage = computed(() =>
   errorMessage(
     createOrderMutation.error.value,
     "Không thể tạo đơn hàng. Vui lòng kiểm tra thông tin và thử lại.",
+  ),
+);
+const vnPayInitiationErrorMessage = computed(() =>
+  errorMessage(
+    initiateVnPayMutation.error.value,
+    "Đơn hàng đã được tạo nhưng chưa thể mở cổng thanh toán VNPay.",
   ),
 );
 const orderValidationMessages = computed(() => {
@@ -522,6 +536,17 @@ function selectPayment(id: string): void {
   if (method?.available) paymentMethodId.value = id;
 }
 
+function selectFulfillment(method: "delivery" | "pickup"): void {
+  if (fulfillment.value === method || createOrderMutation.isPending.value)
+    return;
+  fulfillment.value = method;
+  addressDialogOpen.value = false;
+  confirmationDialogOpen.value = false;
+  confirmationSnapshot.value = null;
+  orderNotice.value = "";
+  createOrderMutation.reset();
+}
+
 function selectVouchers(
   orderVoucherId: string,
   shippingVoucherId: string,
@@ -535,16 +560,23 @@ function removeSelectedVouchers(): void {
   selectedShippingVoucherId.value = "";
 }
 
-function deliveryOrderPayload(): DeliveryOrderPayload | null {
+function checkoutOrderPayload(): CreateCustomerOrderRequest | null {
+  const paymentMethod = paymentPayloadValue.value;
+  if (paymentMethod === null) return null;
+  if (fulfillment.value === "pickup") {
+    return {
+      delivery_method: "pickup",
+      payment_method: paymentMethod,
+    };
+  }
+
   const addressId = shippingAddressId.value;
   const quote = shippingQuoteQuery.data.value;
-  const paymentMethod = paymentPayloadValue.value;
   if (
     addressId === null ||
     !quote ||
     quoteHasExpired(quote.expiresAt) ||
-    !/^[a-f0-9]{64}$/.test(quote.quoteToken) ||
-    paymentMethod === null
+    !/^[a-f0-9]{64}$/.test(quote.quoteToken)
   ) {
     return null;
   }
@@ -563,7 +595,7 @@ const orderAttemptStorageKey = computed(() =>
     : `${ORDER_ATTEMPT_STORAGE_PREFIX}:${userId.value}`,
 );
 
-function orderPayloadFingerprint(payload: DeliveryOrderPayload): string {
+function orderPayloadFingerprint(payload: CreateCustomerOrderRequest): string {
   return JSON.stringify({
     payload,
     cart: {
@@ -615,7 +647,9 @@ function clearOrderAttempt(): void {
   if (storageKey) window.sessionStorage.removeItem(storageKey);
 }
 
-function orderAttemptFor(payload: DeliveryOrderPayload): CheckoutOrderAttempt {
+function orderAttemptFor(
+  payload: CreateCustomerOrderRequest,
+): CheckoutOrderAttempt {
   const fingerprint = orderPayloadFingerprint(payload);
   if (orderAttempt.value?.fingerprint === fingerprint)
     return orderAttempt.value;
@@ -636,18 +670,17 @@ function orderAttemptFor(payload: DeliveryOrderPayload): CheckoutOrderAttempt {
 }
 
 const currentOrderPayloadFingerprint = computed(() => {
-  const payload = deliveryOrderPayload();
+  const payload = checkoutOrderPayload();
   return payload ? orderPayloadFingerprint(payload) : null;
 });
 
 function openOrderConfirmation(): void {
-  const payload = deliveryOrderPayload();
+  const payload = checkoutOrderPayload();
   if (!canPlaceOrder.value || !payload || totals.value.total === null) return;
   createOrderMutation.reset();
   orderNotice.value = "";
   confirmationSnapshot.value = {
-    addressId: payload.address_id,
-    quoteToken: payload.shipping_quote_token,
+    payload,
     expectedTotal: totals.value.total,
   };
   confirmationDialogOpen.value = true;
@@ -681,25 +714,27 @@ async function refreshExpiredQuote(
 }
 
 async function confirmOrder(): Promise<void> {
-  if (createOrderMutation.isPending.value) return;
+  if (createOrderMutation.isPending.value || initiateVnPayMutation.isPending.value) return;
   const snapshot = confirmationSnapshot.value;
-  const quote = shippingQuoteQuery.data.value;
-  if (!snapshot || !quote) {
+  if (!snapshot) {
     closeOrderConfirmation();
     orderNotice.value =
       "Thông tin đặt hàng đã thay đổi. Vui lòng xác nhận lại.";
     return;
   }
-  if (quoteHasExpired(quote.expiresAt)) {
+  const quote = shippingQuoteQuery.data.value;
+  if (
+    snapshot.payload.delivery_method === "delivery" &&
+    (!quote || quoteHasExpired(quote.expiresAt))
+  ) {
     await refreshExpiredQuote(snapshot.expectedTotal);
     return;
   }
 
-  const payload = deliveryOrderPayload();
+  const payload = checkoutOrderPayload();
   if (
     !payload ||
-    payload.address_id !== snapshot.addressId ||
-    payload.shipping_quote_token !== snapshot.quoteToken ||
+    JSON.stringify(payload) !== JSON.stringify(snapshot.payload) ||
     totals.value.total !== snapshot.expectedTotal
   ) {
     closeOrderConfirmation();
@@ -718,18 +753,43 @@ async function confirmOrder(): Promise<void> {
     confirmationDialogOpen.value = false;
     confirmationSnapshot.value = null;
     orderSucceeded.value = true;
-    createdOrder.value = order;
-    queryClient.removeQueries({
-      queryKey: customerShippingQuoteKeys.detail(snapshot.addressId),
-      exact: true,
-    });
+    if (snapshot.payload.delivery_method === "delivery") {
+      queryClient.removeQueries({
+        queryKey: customerShippingQuoteKeys.detail(snapshot.payload.address_id),
+        exact: true,
+      });
+    }
     await cartQuery.refetch();
+    if (order.paymentMethod === "vnpay") {
+      pendingVnPayOrder.value = order;
+      await initiateVnPayPayment(order);
+      return;
+    }
+    createdOrder.value = order;
   } catch {
     // The normalized mutation error remains visible in the confirmation dialog.
   }
 }
 
+async function initiateVnPayPayment(order: CreatedCustomerOrder): Promise<void> {
+  if (initiateVnPayMutation.isPending.value) return;
+  initiateVnPayMutation.reset();
+  try {
+    const initiation = await initiateVnPayMutation.mutateAsync(order.id);
+    saveVnPayPaymentContext({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      paymentNumber: initiation.paymentNumber,
+      expiresAt: initiation.expiresAt,
+    });
+    redirectToVnPay(initiation.paymentUrl);
+  } catch {
+    // The order remains available for a real initiation retry below.
+  }
+}
+
 watch(shippingAddressId, () => {
+  if (fulfillment.value !== "delivery") return;
   if (createOrderMutation.isPending.value) return;
   confirmationDialogOpen.value = false;
   confirmationSnapshot.value = null;
@@ -752,17 +812,17 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
       :data-scenario="props.scenario"
     >
       <div
-        class="mx-auto w-full max-w-[90rem] px-4 py-4 sm:px-6 lg:px-8 lg:py-5"
+        class="mx-auto w-full max-w-[90rem] px-4 pb-3 pt-2 sm:px-6 sm:pt-2.5 lg:px-8 lg:pb-4 lg:pt-3"
       >
-        <div class="flex min-w-0 items-center gap-2">
+        <div class="flex min-w-0 items-center gap-1.5" data-checkout-header>
           <RouterLink
             :to="{ name: ROUTE_NAMES.cart }"
-            class="motion-interactive grid size-9 flex-none place-items-center rounded-lg text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            class="motion-interactive grid size-8 flex-none place-items-center rounded-lg text-primary-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             aria-label="Trở lại giỏ hàng"
           >
             <ChevronLeft class="size-4.5" aria-hidden="true" />
           </RouterLink>
-          <h1 class="truncate text-body-lg font-semibold text-primary-950">
+          <h1 class="truncate text-body-md font-semibold text-primary-950">
             Thanh toán
           </h1>
         </div>
@@ -833,6 +893,33 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
         >
           <div class="grid min-w-0 gap-3">
             <section
+              class="grid h-[3.75rem] grid-cols-2 gap-2 rounded-2xl border border-primary-100 bg-white p-2 shadow-xs"
+              role="radiogroup"
+              aria-label="Cách nhận hàng"
+              data-fulfillment-selector
+            >
+              <button
+                v-for="option in ([
+                  { id: 'delivery', label: 'Giao tận nơi', icon: Truck },
+                  { id: 'pickup', label: 'Nhận tại chi nhánh', icon: Store },
+                ] as const)"
+                :key="option.id"
+                type="button"
+                role="radio"
+                :aria-checked="fulfillment === option.id"
+                class="flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-2 text-caption font-semibold leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:px-3 sm:text-body-sm"
+                :class="fulfillment === option.id
+                  ? 'border-primary-600 bg-primary-50 text-primary-950 ring-1 ring-primary-100'
+                  : 'border-transparent bg-white text-text-secondary hover:bg-primary-50/60'"
+                :data-fulfillment="option.id"
+                @click="selectFulfillment(option.id)"
+              >
+                <component :is="option.icon" class="size-4.5 flex-none" aria-hidden="true" />
+                {{ option.label }}
+              </button>
+            </section>
+
+            <section
               v-if="branchIssueMessage"
               class="rounded-2xl border border-[#edcbc7] bg-[#fff5f3] p-4 text-body-sm text-[#8f3733]"
               role="alert"
@@ -849,6 +936,7 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
             </section>
 
             <section
+              v-if="fulfillment === 'delivery'"
               class="rounded-2xl border border-primary-100 bg-white p-3.5 shadow-xs sm:p-4"
               aria-labelledby="delivery-address-heading"
               data-delivery-section
@@ -1059,6 +1147,27 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
                       </p>
                     </details>
                   </div>
+                </div>
+              </div>
+            </section>
+
+            <section
+              v-else
+              class="rounded-2xl border border-primary-200 bg-primary-50 p-3 shadow-xs"
+              aria-labelledby="pickup-branch-heading"
+              data-pickup-section
+            >
+              <div class="flex items-start gap-2.5">
+                <span class="grid size-9 flex-none place-items-center rounded-lg bg-primary-100 text-primary-700">
+                  <Store class="size-4.5" aria-hidden="true" />
+                </span>
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <h2 id="pickup-branch-heading" class="text-body-md font-semibold text-primary-950">Nhận tại chi nhánh</h2>
+                    <p class="text-caption font-semibold text-primary-800" data-pickup-fee>Phí nhận tại chi nhánh: 0 đ</p>
+                  </div>
+                  <p class="mt-1 font-semibold leading-5 text-primary-950" data-pickup-branch-name>{{ cartBranch?.name }}</p>
+                  <p class="mt-0.5 break-words text-body-sm leading-5 text-text-secondary" data-pickup-branch-address>{{ cartBranch?.address }}</p>
                 </div>
               </div>
             </section>
@@ -1353,7 +1462,7 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
                   class="mt-1 text-body-sm font-semibold text-primary-900"
                   data-selected-payment
                 >
-                  {{ selectedPayment?.name }}
+                  {{ selectedPaymentLabel }}
                 </p>
               </section>
 
@@ -1495,6 +1604,7 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
         v-model="paymentDialogOpen"
         :methods="supportedCheckoutPaymentMethods"
         :selected-id="paymentMethodId"
+        :fulfillment="fulfillment"
         @confirm="selectPayment"
       />
       <CheckoutVoucherDialog
@@ -1535,9 +1645,9 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
             >
               <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
                 <dt class="text-text-secondary">Cách nhận hàng</dt>
-                <dd class="font-semibold text-primary-950">Giao tận nơi</dd>
+                <dd class="font-semibold text-primary-950">{{ fulfillment === 'delivery' ? 'Giao tận nơi' : 'Nhận tại chi nhánh' }}</dd>
               </div>
-              <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+              <div v-if="fulfillment === 'delivery'" class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
                 <dt class="text-text-secondary">Người nhận</dt>
                 <dd class="min-w-0 font-semibold text-primary-950">
                   {{ selectedAddress?.fullName }} · {{ selectedAddress?.phone }}
@@ -1567,7 +1677,7 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
               <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
                 <dt class="text-text-secondary">Thanh toán</dt>
                 <dd class="font-semibold text-primary-950">
-                  {{ selectedPayment?.name }}
+                  {{ selectedPaymentLabel }}
                 </dd>
               </div>
               <div
@@ -1608,7 +1718,7 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
               <button
                 type="button"
                 class="min-h-11 rounded-xl border border-primary-200 px-4 font-semibold text-primary-800 disabled:opacity-50"
-                :disabled="createOrderMutation.isPending.value"
+                :disabled="createOrderMutation.isPending.value || initiateVnPayMutation.isPending.value"
                 data-cancel-order-confirmation
                 @click="closeOrderConfirmation"
               >
@@ -1617,7 +1727,7 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
               <button
                 type="button"
                 class="min-h-11 rounded-xl bg-primary px-4 font-semibold text-primary-foreground disabled:cursor-wait disabled:opacity-60"
-                :disabled="createOrderMutation.isPending.value"
+                :disabled="createOrderMutation.isPending.value || initiateVnPayMutation.isPending.value"
                 data-confirm-order
                 @click="confirmOrder"
               >
@@ -1628,6 +1738,28 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
                 }}
               </button>
             </div>
+          </section>
+        </div>
+
+        <div
+          v-if="pendingVnPayOrder && initiateVnPayMutation.isError.value"
+          class="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-primary-950/50 p-4 backdrop-blur-sm"
+          data-vnpay-initiation-error
+        >
+          <section class="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="vnpay-initiation-error-title">
+            <AlertTriangle class="mx-auto size-12 text-[#a65f21]" aria-hidden="true" />
+            <h2 id="vnpay-initiation-error-title" class="mt-4 text-heading-2 text-primary-950">Chưa thể mở VNPay</h2>
+            <p class="mt-2 text-body-sm text-text-secondary">{{ vnPayInitiationErrorMessage }}</p>
+            <p class="mt-3 rounded-xl bg-primary-50 px-3 py-2 text-body-sm">Đơn hàng <strong>{{ pendingVnPayOrder.orderNumber }}</strong> đã được tạo. Thử lại sẽ không tạo đơn hàng mới.</p>
+            <button
+              type="button"
+              class="mt-5 min-h-11 rounded-xl bg-primary px-5 font-semibold text-primary-foreground disabled:opacity-50"
+              :disabled="initiateVnPayMutation.isPending.value"
+              data-retry-vnpay-initiation
+              @click="initiateVnPayPayment(pendingVnPayOrder)"
+            >
+              {{ initiateVnPayMutation.isPending.value ? 'Đang mở VNPay...' : 'Thử mở lại VNPay' }}
+            </button>
           </section>
         </div>
 
@@ -1681,7 +1813,7 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
               </p>
               <p class="mt-3 flex justify-between gap-4">
                 <span class="text-text-secondary">Cách nhận hàng</span
-                ><strong>Giao tận nơi</strong>
+                ><strong>{{ createdOrder.deliveryMethod === 'pickup' ? 'Nhận tại chi nhánh' : 'Giao tận nơi' }}</strong>
               </p>
               <p class="mt-3 flex justify-between gap-4">
                 <span class="text-text-secondary">Trạng thái</span

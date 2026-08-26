@@ -7,6 +7,7 @@ import type { CheckoutPaymentMethod } from '@/types/customer'
 const props = defineProps<{
   methods: readonly CheckoutPaymentMethod[]
   selectedId: string
+  fulfillment: 'delivery' | 'pickup'
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +30,18 @@ function confirm(): void {
   if (!selectedId.value) return
   emit('confirm', selectedId.value)
   open.value = false
+}
+
+function paymentName(method: CheckoutPaymentMethod): string {
+  return method.name
+}
+
+function paymentDescription(method: CheckoutPaymentMethod): string {
+  if (method.id === 'vnpay') return 'Thanh toán trực tuyến trước khi nhận hàng.'
+  if (method.id !== 'cod') return method.description
+  return props.fulfillment === 'pickup'
+    ? 'Thanh toán trực tiếp khi nhận hàng tại chi nhánh.'
+    : 'Thanh toán khi đơn hàng được giao.'
 }
 </script>
 
@@ -65,9 +78,9 @@ function confirm(): void {
         <component :is="paymentIcons[method.id]" class="size-5 flex-none text-primary-700" aria-hidden="true" />
         <span class="min-w-0">
           <strong class="text-body-sm text-primary-950">
-            {{ method.name }}
+            {{ paymentName(method) }}
           </strong>
-          <span class="mt-1 block text-caption text-text-secondary">{{ method.description }}</span>
+          <span class="mt-1 block text-caption text-text-secondary">{{ paymentDescription(method) }}</span>
           <span v-if="method.unavailableReason" class="mt-1 block text-caption font-semibold text-[#8f493f]">{{ method.unavailableReason }}</span>
         </span>
         <CheckCircle2

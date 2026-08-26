@@ -23,6 +23,9 @@ export const ENDPOINTS = {
     `/customer/addresses/${addressId}/default`,
   customerShippingQuote: '/customer/shipping/quote',
   customerOrders: '/customer/orders',
+  customerOrderPayment: (orderId: number) => `/customer/orders/${orderId}/payment`,
+  customerOrderVnPayPayment: (orderId: number) => `/customer/orders/${orderId}/payment/vnpay`,
+  vnpayReturn: '/payments/vnpay/return',
   branches: '/branches',
   products: '/products',
 } as const

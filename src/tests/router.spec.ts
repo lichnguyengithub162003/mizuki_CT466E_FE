@@ -145,4 +145,21 @@ describe('foundation router', () => {
     expect(router.currentRoute.value.query.redirect).toBe('/checkout')
     expect(authApiMocks.getCurrentUser).toHaveBeenCalledOnce()
   })
+
+  it('registers the protected VNPay return route and preserves its signed query on login redirect', async () => {
+    useAuthStore(pinia).resetForTesting()
+    authApiMocks.getCurrentUser.mockRejectedValue({
+      name: 'ApplicationError',
+      kind: 'unauthorized',
+      message: 'Guest',
+    })
+    const router = createAppRouter(createMemoryHistory())
+    const returnPath = '/payment/vnpay/return?vnp_TxnRef=PAY-1&vnp_SecureHash=signed'
+
+    expect(router.resolve(returnPath).name).toBe('vnpay-return')
+    await router.push(returnPath)
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.query.redirect).toBe(returnPath)
+  })
 })
