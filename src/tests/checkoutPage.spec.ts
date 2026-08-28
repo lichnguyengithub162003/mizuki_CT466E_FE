@@ -51,11 +51,26 @@ const orderApiMocks = vi.hoisted(() => ({
   createCustomerOrder: vi.fn(),
 }))
 
+const walletApiMocks = vi.hoisted(() => ({
+  getCustomerWallet: vi.fn(),
+}))
+
+const checkoutApiMocks = vi.hoisted(() => ({ getCheckoutPreview: vi.fn() }))
+const paymentApiMocks = vi.hoisted(() => ({ createVnPayPaymentUrl: vi.fn() }))
+const vnPayNavigationMocks = vi.hoisted(() => ({ redirectToVnPay: vi.fn() }))
+
 vi.mock('@/api/locations/locationApi', () => locationApiMocks)
 vi.mock('@/api/cartApi', () => cartApiMocks)
 vi.mock('@/api/addressApi', () => addressApiMocks)
 vi.mock('@/api/shippingApi', () => shippingApiMocks)
 vi.mock('@/api/orderApi', () => orderApiMocks)
+vi.mock('@/api/walletApi', () => walletApiMocks)
+vi.mock('@/api/checkoutApi', () => checkoutApiMocks)
+vi.mock('@/api/paymentApi', () => paymentApiMocks)
+vi.mock('@/utils/vnpay', async () => ({
+  ...(await vi.importActual<typeof import('@/utils/vnpay')>('@/utils/vnpay')),
+  redirectToVnPay: vnPayNavigationMocks.redirectToVnPay,
+}))
 
 const serverCart = {
   id: 1,
@@ -123,6 +138,8 @@ const createdOrder = {
   statusLabel: 'Chờ xác nhận',
   deliveryMethod: 'delivery' as const,
   paymentMethod: 'cash' as const,
+  paymentStatus: 'pending' as const,
+  paymentStatusLabel: 'Chờ thanh toán',
   totalAmount: 519_000,
 }
 
@@ -335,6 +352,38 @@ beforeEach(() => {
     }),
   )
   orderApiMocks.createCustomerOrder.mockReset().mockResolvedValue({ ...createdOrder })
+  walletApiMocks.getCustomerWallet.mockReset().mockResolvedValue({
+    id: 7,
+    balance: 825_000,
+    currency: 'VND',
+    updatedAt: '2026-08-26T09:30:00.000000Z',
+  })
+  checkoutApiMocks.getCheckoutPreview.mockReset().mockImplementation(async (payload) => {
+    const deliveryShippingFee = payload.delivery_method === 'delivery' && payload.shipping_quote_token === quoteToken18 ? 50_000 : 42_000
+    return ({
+    deliveryMethod: payload.delivery_method,
+    branch: serverCart.branch,
+    addressId: payload.delivery_method === 'delivery' ? payload.address_id : null,
+    promotion: null,
+    subtotal: 500_000,
+    discountAmount: 25_000,
+    shippingFee: payload.delivery_method === 'delivery' ? deliveryShippingFee : 0,
+    totalAmount: payload.delivery_method === 'delivery' ? 475_000 + deliveryShippingFee : 475_000,
+    expectedDeliveryTime: payload.delivery_method === 'delivery' ? shippingQuote.expectedDeliveryTime : null,
+    wallet: { balance: 825_000, payable: true, shortfall: 0 },
+    paymentMethods: [
+      { value: 'cash', label: 'Tiền mặt' },
+      { value: 'wallet', label: 'Ví Mizuki' },
+      { value: 'vnpay', label: 'VNPay' },
+    ],
+    selectedPaymentMethod: payload.payment_method,
+  })})
+  paymentApiMocks.createVnPayPaymentUrl.mockReset().mockResolvedValue({
+    paymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?signed=1',
+    expiresAt: '2026-08-28T12:15:00Z',
+    paymentNumber: 'PAY-901',
+  })
+  vnPayNavigationMocks.redirectToVnPay.mockReset()
   serverAddresses = [...savedAddresses]
   addressApiMocks.getCustomerAddresses.mockReset().mockImplementation(
     async () => [...serverAddresses],
@@ -770,16 +819,15 @@ describe('customer checkout foundation', () => {
     expect(document.querySelector<HTMLInputElement>('input[value="17"]')).not.toBeNull()
   })
 
-  it('begins with the delivery address without a fulfillment selector', async () => {
+  it('begins with delivery and exposes the real pickup fulfillment option', async () => {
     const { wrapper } = await mountCheckout('existing')
 
     expect(wrapper.find('[data-delivery-section]').exists()).toBe(true)
     expect(wrapper.find('[data-delivery-only]').exists()).toBe(false)
-    expect(wrapper.find('[role="radiogroup"][aria-label="Cách nhận hàng"]').exists()).toBe(false)
+    expect(wrapper.find('[data-fulfillment-selector]').exists()).toBe(true)
     expect(wrapper.get('[data-total-shipping]').text()).toContain('42.000')
-    expect(wrapper.text()).not.toContain('Nhận tại chi nhánh')
     expect(wrapper.find('[data-pickup-section]').exists()).toBe(false)
-    expect(wrapper.find('[data-fulfillment="pickup"]').exists()).toBe(false)
+    expect(wrapper.find('[data-fulfillment="pickup"]').exists()).toBe(true)
     expect(shippingApiMocks.getCustomerShippingQuote).toHaveBeenCalledWith(17)
     expect(serverCart.branch.name).toBe('Mizuki Vĩnh Long')
   })
@@ -992,26 +1040,210 @@ describe('customer checkout foundation', () => {
     expect(wrapper.find('[data-total-shipping-discount]').exists()).toBe(false)
   })
 
-  it('shows only backend-supported payment methods and clearly highlights cash', async () => {
+  it('shows backend-supported payment methods, authoritative wallet balance, and highlights cash', async () => {
     const { wrapper } = await mountCheckout('existing')
     expect(wrapper.get('[data-checkout-payment-card] [data-change-payment]').text()).toBe('Thay đổi')
     await wrapper.get('[data-change-payment]').trigger('click')
     await nextTick()
 
-    expect(document.querySelectorAll('[data-payment-id]')).toHaveLength(2)
+    expect(document.querySelectorAll('[data-payment-id]')).toHaveLength(3)
     const cashMethod = document.querySelector('[data-payment-id="cod"]')
+    const walletMethod = document.querySelector('[data-payment-id="wallet"]')
     expect(cashMethod).not.toBeNull()
-    expect(document.querySelector('[data-payment-id="wallet"]')).toBeNull()
+    expect(walletMethod).not.toBeNull()
     expect(document.querySelector('[data-payment-id="vnpay"]')).not.toBeNull()
     expect(document.querySelector('[data-payment-id="atm"]')).toBeNull()
     expect(document.querySelector('[data-payment-id="card"]')).toBeNull()
-    expect(document.querySelector<HTMLInputElement>('[data-payment-id="vnpay"] input')?.disabled).toBe(true)
+    expect(document.querySelector<HTMLInputElement>('[data-payment-id="vnpay"] input')?.disabled).toBe(false)
+    expect(walletMethod?.querySelector<HTMLInputElement>('input')?.disabled).toBe(false)
+    expect(walletMethod?.querySelector('[data-wallet-balance]')?.textContent).toContain('825.000')
+    expect(walletApiMocks.getCustomerWallet).toHaveBeenCalledOnce()
     expect(cashMethod?.getAttribute('data-payment-selected')).toBe('true')
     expect(cashMethod?.classList.contains('border-primary-600')).toBe(true)
     expect(cashMethod?.classList.contains('bg-primary-50')).toBe(true)
     expect(cashMethod?.querySelector('[data-payment-selected-indicator]')).not.toBeNull()
     expect(wrapper.get('[data-selected-payment]').text()).toContain('Thanh toán khi nhận hàng')
     expect(wrapper.find('#checkout-note').exists()).toBe(false)
+  })
+
+  it('shows wallet balance loading without disabling the backend-authoritative payment method', async () => {
+    walletApiMocks.getCustomerWallet.mockReset().mockReturnValue(new Promise(() => undefined))
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-change-payment]').trigger('click')
+    await nextTick()
+
+    const walletMethod = document.querySelector('[data-payment-id="wallet"]')
+    expect(walletMethod?.querySelector('[data-wallet-balance-loading]')?.textContent)
+      .toContain('Đang tải số dư ví')
+    expect(walletMethod?.querySelector<HTMLInputElement>('input')?.disabled).toBe(false)
+  })
+
+  it('shows wallet balance API errors while keeping Wallet selectable for server validation', async () => {
+    walletApiMocks.getCustomerWallet.mockReset().mockRejectedValue(new Error('Không tải được ví.'))
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-change-payment]').trigger('click')
+    await nextTick()
+
+    const walletMethod = document.querySelector('[data-payment-id="wallet"]')
+    expect(walletMethod?.querySelector('[data-wallet-balance-error]')?.textContent)
+      .toContain('Hệ thống sẽ xác nhận khi đặt hàng')
+    expect(walletMethod?.querySelector<HTMLInputElement>('input')?.disabled).toBe(false)
+  })
+
+  it('submits wallet exactly, uses the normal success flow, and does not start VNPay', async () => {
+    orderApiMocks.createCustomerOrder.mockResolvedValueOnce({
+      ...createdOrder,
+      paymentMethod: 'wallet',
+    })
+    const { wrapper, router } = await mountCheckout('existing')
+
+    await wrapper.get('[data-change-payment]').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('[data-payment-id="wallet"] input')?.click()
+    findDocumentButton('Xác nhận thanh toán').click()
+    await flushPromises()
+    expect(wrapper.get('[data-selected-payment]').text()).toContain('Ví Mizuki')
+    expect(wrapper.get('[data-selected-wallet-balance]').text()).toContain('825.000')
+
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder).toHaveBeenCalledTimes(1)
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[0]).toEqual({
+      delivery_method: 'delivery',
+      address_id: 17,
+      shipping_quote_token: quoteToken17,
+      payment_method: 'wallet',
+    })
+    expect(document.querySelector('[data-order-success]')).not.toBeNull()
+    expect(document.querySelector('[data-order-confirmation]')).toBeNull()
+    expect(router.currentRoute.value.path).toBe('/checkout')
+    expect(walletApiMocks.getCustomerWallet).toHaveBeenCalledTimes(2)
+    expect(cartApiMocks.getCustomerCart).toHaveBeenCalledTimes(2)
+    expect(paymentApiMocks.createVnPayPaymentUrl).not.toHaveBeenCalled()
+    expect(vnPayNavigationMocks.redirectToVnPay).not.toHaveBeenCalled()
+  })
+
+  it('creates the VNPay order before requesting and redirecting to the backend-generated URL', async () => {
+    orderApiMocks.createCustomerOrder.mockResolvedValueOnce({
+      ...createdOrder,
+      paymentMethod: 'vnpay',
+    })
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-change-payment]').trigger('click')
+    document.querySelector<HTMLInputElement>('[data-payment-id="vnpay"] input')?.click()
+    findDocumentButton('Xác nhận thanh toán').click()
+    await flushPromises()
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[0]).toEqual({
+      delivery_method: 'delivery',
+      address_id: 17,
+      shipping_quote_token: quoteToken17,
+      payment_method: 'vnpay',
+    })
+    expect(orderApiMocks.createCustomerOrder.mock.invocationCallOrder[0])
+      .toBeLessThan(paymentApiMocks.createVnPayPaymentUrl.mock.invocationCallOrder[0]!)
+    expect(paymentApiMocks.createVnPayPaymentUrl).toHaveBeenCalledWith(901)
+    expect(vnPayNavigationMocks.redirectToVnPay)
+      .toHaveBeenCalledWith('https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?signed=1')
+    expect(window.sessionStorage.getItem('mizuki:vnpay:return:PAY-901')).toContain('"orderId":901')
+  })
+
+  it.each([
+    ['cod', 'cash'],
+    ['wallet', 'wallet'],
+    ['vnpay', 'vnpay'],
+  ] as const)('submits pickup + %s without an address, stale quote token, or a new GHN request', async (paymentId, paymentMethod) => {
+    orderApiMocks.createCustomerOrder.mockResolvedValueOnce({
+      ...createdOrder,
+      deliveryMethod: 'pickup',
+      paymentMethod,
+      totalAmount: 475_000,
+    })
+    const { wrapper } = await mountCheckout('existing')
+    const quoteCallsBeforePickup = shippingApiMocks.getCustomerShippingQuote.mock.calls.length
+
+    await wrapper.get('[data-fulfillment="pickup"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-delivery-section]').exists()).toBe(false)
+    expect(wrapper.get('[data-pickup-branch]').text()).toContain('Mizuki Vĩnh Long')
+    expect(wrapper.get('[data-total-shipping]').text()).toContain('0')
+    expect(wrapper.get('[data-total]').text()).toContain('475.000')
+    expect(shippingApiMocks.getCustomerShippingQuote).toHaveBeenCalledTimes(quoteCallsBeforePickup)
+
+    if (paymentId !== 'cod') {
+      await wrapper.get('[data-change-payment]').trigger('click')
+      document.querySelector<HTMLInputElement>(`[data-payment-id="${paymentId}"] input`)?.click()
+      findDocumentButton('Xác nhận thanh toán').click()
+      await flushPromises()
+    }
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[0]).toEqual({
+      delivery_method: 'pickup',
+      payment_method: paymentMethod,
+    })
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[0]).not.toHaveProperty('address_id')
+    expect(orderApiMocks.createCustomerOrder.mock.calls[0]?.[0]).not.toHaveProperty('shipping_quote_token')
+  })
+
+  it('revalidates the delivery quote after switching pickup back to delivery', async () => {
+    const { wrapper } = await mountCheckout('existing')
+    const initialCalls = shippingApiMocks.getCustomerShippingQuote.mock.calls.length
+    await wrapper.get('[data-fulfillment="pickup"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-fulfillment="delivery"]').trigger('click')
+    await flushPromises()
+
+    expect(shippingApiMocks.getCustomerShippingQuote.mock.calls.length).toBeGreaterThan(initialCalls)
+    expect(wrapper.get('[data-total-shipping]').text()).toContain('42.000')
+  })
+
+  it('shows the backend balance error, preserves cart, and allows switching back to COD', async () => {
+    orderApiMocks.createCustomerOrder.mockRejectedValueOnce({
+      name: 'ApplicationError',
+      kind: 'validation',
+      message: 'Dữ liệu gửi lên chưa hợp lệ.',
+      validationErrors: {
+        balance: ['Số tiền trong ví không đủ để thanh toán đơn hàng này!'],
+      },
+      cause: null,
+    })
+    const { wrapper } = await mountCheckout('existing')
+
+    await wrapper.get('[data-change-payment]').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('[data-payment-id="wallet"] input')?.click()
+    findDocumentButton('Xác nhận thanh toán').click()
+    await flushPromises()
+    await wrapper.get('[data-place-order-desktop]').trigger('click')
+    findDocumentButton('Xác nhận đặt hàng').click()
+    await flushPromises()
+
+    const error = document.querySelector('[data-create-order-error]')
+    expect(error?.textContent).toContain('Số tiền trong ví không đủ để thanh toán đơn hàng này!')
+    expect(error?.textContent).not.toContain('Dữ liệu gửi lên chưa hợp lệ.')
+    expect(document.querySelector('[data-order-success]')).toBeNull()
+    expect(wrapper.findAll('[data-checkout-products] article')).toHaveLength(2)
+    expect(cartApiMocks.getCustomerCart).toHaveBeenCalledTimes(1)
+
+    findDocumentButton('Hủy').click()
+    await nextTick()
+    await wrapper.get('[data-change-payment]').trigger('click')
+    await nextTick()
+    document.querySelector<HTMLInputElement>('[data-payment-id="cod"] input')?.click()
+    findDocumentButton('Xác nhận thanh toán').click()
+    await nextTick()
+    expect(wrapper.get('[data-selected-payment]').text()).toContain('Thanh toán khi nhận hàng')
   })
 
   it('opens a confirmation with current delivery data and cancel sends no request', async () => {
@@ -1311,7 +1543,7 @@ describe('customer checkout foundation', () => {
     expect(openSpy).not.toHaveBeenCalled()
     expect(source).not.toMatch(/\bany\b/)
     expect(checkoutSource).not.toMatch(/createCheckoutScenario|CheckoutOrderResult|data-order-result/)
-    expect(checkoutSource).not.toMatch(/pickup|Nhận tại chi nhánh|variant\.sku/)
+    expect(checkoutSource).not.toMatch(/variant\.sku/)
     expect(checkoutSource).not.toMatch(/data-delivery-only/)
     expect(checkoutSource).not.toMatch(/(?:animate|pulse|bounce|blink)[^>]*data-delivery-truck-icon|data-delivery-truck-icon[^>]*(?:animate|pulse|bounce|blink)/)
     expect(checkoutSource).not.toMatch(/item\.variant\.name/)

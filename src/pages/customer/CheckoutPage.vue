@@ -8,9 +8,12 @@ import {
   Info,
   PackageCheck,
   PackageOpen,
+  QrCode,
+  Store,
   Sparkles,
   Tag,
   Truck,
+  WalletCards,
 } from "@lucide/vue";
 import { useQueryClient } from "@tanstack/vue-query";
 import { computed, nextTick, ref, watch } from "vue";
@@ -35,11 +38,14 @@ import {
   useUpdateCustomerAddressMutation,
 } from "@/queries/addresses";
 import { useCustomerCartQuery } from "@/queries/cart";
+import { useCheckoutPreviewQuery } from "@/queries/checkout";
 import { useCreateCustomerOrderMutation } from "@/queries/orders";
+import { useCreateVnPayPaymentUrlMutation } from "@/queries/payments";
 import {
   customerShippingQuoteKeys,
   useCustomerShippingQuoteQuery,
 } from "@/queries/shipping";
+import { customerWalletKeys, useCustomerWalletQuery } from "@/queries/wallet";
 import { useAuthStore } from "@/stores/auth";
 import { useBranchPreferenceStore } from "@/stores/branchPreference";
 import { pinia } from "@/stores/pinia";
@@ -53,7 +59,9 @@ import type { ApiValidationErrors } from "@/types/api";
 import type {
   CreateCustomerOrderRequest,
   CreatedCustomerOrder,
+  CustomerOrderPaymentMethod,
 } from "@/types/orders";
+import { persistVnPayReturnContext, redirectToVnPay } from "@/utils/vnpay";
 
 const props = defineProps<{
   scenario?: CheckoutScenario;
@@ -74,20 +82,8 @@ const paymentDialogOpen = ref(false);
 const voucherDialogOpen = ref(false);
 const selectedOrderVoucherId = ref("");
 const selectedShippingVoucherId = ref("");
-const supportedCheckoutPaymentMethods = checkoutPaymentMethods
-  .filter((method) => ["cod", "vnpay"].includes(method.id))
-  .map((method) => {
-    if (method.id === "cod") return method;
-    return {
-      ...method,
-      available: false,
-      unavailableReason: "Thanh toán VNPay đang được cập nhật.",
-    };
-  });
-const paymentMethodId = ref(
-  supportedCheckoutPaymentMethods.find((method) => method.id === "cod")?.id ??
-    "",
-);
+const fulfillmentMethod = ref<"delivery" | "pickup">("delivery");
+const paymentMethodId = ref("cod");
 const failedProductImageIds = ref<ReadonlySet<number>>(new Set<number>());
 const confirmationDialogOpen = ref(false);
 const confirmationSnapshot = ref<OrderConfirmationSnapshot | null>(null);
@@ -97,15 +93,10 @@ const orderSucceeded = ref(false);
 const ORDER_ATTEMPT_STORAGE_PREFIX = "mizuki:checkout:create-order-attempt";
 
 interface OrderConfirmationSnapshot {
-  readonly addressId: number;
-  readonly quoteToken: string;
+  readonly payload: CreateCustomerOrderRequest;
+  readonly fingerprint: string;
   readonly expectedTotal: number;
 }
-
-type DeliveryOrderPayload = Extract<
-  CreateCustomerOrderRequest,
-  { readonly delivery_method: "delivery" }
->;
 
 interface CheckoutOrderAttempt {
   readonly fingerprint: string;
@@ -120,7 +111,10 @@ const updateAddressMutation = useUpdateCustomerAddressMutation(userId);
 const setDefaultAddressMutation = useSetDefaultCustomerAddressMutation(userId);
 const deleteAddressMutation = useDeleteCustomerAddressMutation(userId);
 const cartQuery = useCustomerCartQuery(userId);
+const walletQuery = useCustomerWalletQuery(userId);
 const createOrderMutation = useCreateCustomerOrderMutation();
+const createVnPayUrlMutation = useCreateVnPayPaymentUrlMutation();
+const vnPayRedirectError = ref("");
 const cart = computed(() => cartQuery.data.value);
 const cartItems = computed(() => cart.value?.items ?? []);
 const cartBranch = computed(() => cart.value?.branch);
@@ -146,7 +140,11 @@ watch(
         serverAddresses[0]?.id ??
         "";
     }
-    if (serverAddresses.length === 0 && serverCartItems.length > 0) {
+    if (
+      fulfillmentMethod.value === "delivery" &&
+      serverAddresses.length === 0 &&
+      serverCartItems.length > 0
+    ) {
       addressDraft.value = { ...emptyCheckoutAddressDraft, isDefault: true };
       addressDialogStartInForm.value = true;
       addressDialogOpen.value = true;
@@ -160,6 +158,26 @@ const currencyFormatter = new Intl.NumberFormat("vi-VN", {
   currency: "VND",
 });
 const numberFormatter = new Intl.NumberFormat("vi-VN");
+const supportedCheckoutPaymentMethods = computed(() =>
+  checkoutPaymentMethods
+    .filter((method) => ["cod", "wallet", "vnpay"].includes(method.id))
+    .map((method) => {
+      if (method.id === "cod") return method;
+      if (method.id === "wallet") {
+        return {
+          ...method,
+          available: true,
+          balance: walletQuery.data.value?.balance,
+          balanceState: walletQuery.isPending.value
+            ? ("loading" as const)
+            : walletQuery.isError.value
+              ? ("error" as const)
+              : ("ready" as const),
+        };
+      }
+      return { ...method, available: true, unavailableReason: undefined };
+    }),
+);
 
 function formatSavings(amount: number): string {
   return `${numberFormatter.format(Math.max(amount, 0))} đ`;
@@ -194,6 +212,7 @@ const shippingAddressId = computed(() => {
 });
 const shippingQuoteEnabled = computed(
   () =>
+    fulfillmentMethod.value === "delivery" &&
     !orderSucceeded.value &&
     cartItems.value.length > 0 &&
     shippingAddressId.value !== null &&
@@ -218,23 +237,52 @@ const expectedDeliveryDate = computed(() =>
   ),
 );
 const selectedPayment = computed(() =>
-  supportedCheckoutPaymentMethods.find(
+  supportedCheckoutPaymentMethods.value.find(
     (method) => method.id === paymentMethodId.value,
   ),
 );
-const paymentPayloadValue = computed<"cash" | null>(() =>
-  paymentMethodId.value === "cod" ? "cash" : null,
-);
+const paymentPayloadValue = computed<CustomerOrderPaymentMethod | null>(() => {
+  if (paymentMethodId.value === "cod") return "cash";
+  if (paymentMethodId.value === "wallet") return "wallet";
+  if (paymentMethodId.value === "vnpay") return "vnpay";
+  return null;
+});
 const hasUnavailableProduct = computed(() =>
   cartItems.value.some(
     (item) => item.stockWarning || item.availableQuantity < item.quantity,
   ),
 );
-const shippingFee = computed<number | null>(() =>
-  shippingQuoteExpired.value
-    ? null
-    : (shippingQuoteQuery.data.value?.shippingFee ?? null),
+const checkoutPreviewPayload = computed<CreateCustomerOrderRequest | null>(
+  () => {
+    const paymentMethod = paymentPayloadValue.value;
+    if (
+      !paymentMethod ||
+      !branchMatchesCart.value ||
+      cartItems.value.length === 0 ||
+      hasUnavailableProduct.value
+    )
+      return null;
+    if (fulfillmentMethod.value === "pickup") {
+      return { delivery_method: "pickup", payment_method: paymentMethod };
+    }
+    const addressId = shippingAddressId.value;
+    const quote = shippingQuoteQuery.data.value;
+    if (
+      addressId === null ||
+      !quote ||
+      quoteHasExpired(quote.expiresAt) ||
+      !/^[a-f0-9]{64}$/.test(quote.quoteToken)
+    )
+      return null;
+    return {
+      delivery_method: "delivery",
+      address_id: addressId,
+      shipping_quote_token: quote.quoteToken,
+      payment_method: paymentMethod,
+    };
+  },
 );
+const checkoutPreviewQuery = useCheckoutPreviewQuery(checkoutPreviewPayload);
 const selectedOrderVoucher = computed(() =>
   checkoutVouchers.find(
     (voucher) => voucher.id === selectedOrderVoucherId.value,
@@ -247,21 +295,17 @@ const selectedShippingVoucher = computed(() =>
 );
 
 const totals = computed(() => {
-  const subtotal = cart.value?.totalAmount ?? 0;
-  const productDiscount = cart.value?.discountAmount ?? 0;
-  const serverCartTotal =
-    cart.value?.totalAfterDiscount ?? Math.max(subtotal - productDiscount, 0);
-  const total =
-    shippingFee.value === null
-      ? null
-      : Math.max(serverCartTotal + shippingFee.value, 0);
+  const preview = checkoutPreviewQuery.data.value;
+  const subtotal = preview?.subtotal ?? cart.value?.totalAmount ?? 0;
+  const productDiscount =
+    preview?.discountAmount ?? cart.value?.discountAmount ?? 0;
 
   return {
     selectedCount: cart.value?.totalQuantity ?? 0,
     subtotal,
     productDiscount,
-    shippingFee: shippingFee.value,
-    total,
+    shippingFee: preview?.shippingFee ?? null,
+    total: preview?.totalAmount ?? null,
     savedAmount: productDiscount,
   };
 });
@@ -272,14 +316,18 @@ const checkoutDataReady = computed(() => {
   if (!branchMatchesCart.value) return false;
   if (!paymentPayloadValue.value || !selectedPayment.value?.available)
     return false;
+  if (
+    !checkoutPreviewPayload.value ||
+    !checkoutPreviewQuery.data.value ||
+    checkoutPreviewQuery.isError.value
+  )
+    return false;
+  if (fulfillmentMethod.value === "pickup") return true;
   const quote = shippingQuoteQuery.data.value;
   return Boolean(
     selectedAddress.value &&
     shippingAddressId.value &&
     quote &&
-    /^[a-f0-9]{64}$/.test(quote.quoteToken) &&
-    !shippingQuoteQuery.isPending.value &&
-    !shippingQuoteQuery.isError.value &&
     !shippingQuoteExpired.value,
   );
 });
@@ -291,7 +339,19 @@ const checkoutReadinessMessage = computed(() => {
   if (userId.value === null) return "Vui lòng đăng nhập để đặt hàng.";
   if (!branchMatchesCart.value)
     return "Vui lòng kiểm tra lại chi nhánh của giỏ hàng.";
-  if (!selectedAddress.value) return "Vui lòng chọn địa chỉ nhận hàng.";
+  if (fulfillmentMethod.value === "delivery" && !selectedAddress.value)
+    return "Vui lòng chọn địa chỉ nhận hàng.";
+  if (
+    fulfillmentMethod.value === "pickup" &&
+    checkoutPreviewQuery.isFetching.value
+  )
+    return "Đang xác nhận thông tin nhận hàng tại cửa hàng.";
+  if (checkoutPreviewQuery.isError.value)
+    return errorMessage(
+      checkoutPreviewQuery.error.value,
+      "Không thể xác nhận tổng thanh toán.",
+    );
+  if (fulfillmentMethod.value === "pickup") return "";
   if (shippingQuoteQuery.isFetching.value)
     return "Đang cập nhật báo giá vận chuyển.";
   if (shippingQuoteQuery.isError.value)
@@ -372,19 +432,29 @@ const shippingQuoteErrorMessage = computed(() =>
     "Không thể lấy báo giá vận chuyển. Vui lòng thử lại.",
   ),
 );
-const orderErrorMessage = computed(() =>
-  errorMessage(
-    createOrderMutation.error.value,
-    "Không thể tạo đơn hàng. Vui lòng kiểm tra thông tin và thử lại.",
-  ),
-);
+const orderErrorMessage = computed(() => {
+  const errors = readValidationErrors(createOrderMutation.error.value);
+  const balanceError =
+    paymentMethodId.value === "wallet"
+      ? errors?.balance?.[0]?.trim()
+      : undefined;
+  return (
+    balanceError ||
+    errorMessage(
+      createOrderMutation.error.value,
+      "Không thể tạo đơn hàng. Vui lòng kiểm tra thông tin và thử lại.",
+    )
+  );
+});
 const orderValidationMessages = computed(() => {
   const errors = readValidationErrors(createOrderMutation.error.value);
   if (!errors) return [];
   return Object.values(errors)
     .flatMap((messages) => messages)
     .map((message) => message.trim())
-    .filter(Boolean);
+    .filter(
+      (message) => Boolean(message) && message !== orderErrorMessage.value,
+    );
 });
 
 function addressText(address: CheckoutAddress): string {
@@ -518,8 +588,24 @@ function selectAddress(id: string): void {
 }
 
 function selectPayment(id: string): void {
-  const method = supportedCheckoutPaymentMethods.find((item) => item.id === id);
+  const method = supportedCheckoutPaymentMethods.value.find(
+    (item) => item.id === id,
+  );
   if (method?.available) paymentMethodId.value = id;
+}
+
+function selectFulfillment(method: "delivery" | "pickup"): void {
+  if (fulfillmentMethod.value === method) return;
+  fulfillmentMethod.value = method;
+  confirmationDialogOpen.value = false;
+  confirmationSnapshot.value = null;
+  orderNotice.value = "";
+  createOrderMutation.reset();
+  if (method === "delivery" && addresses.value.length === 0) {
+    addressDraft.value = { ...emptyCheckoutAddressDraft, isDefault: true };
+    addressDialogStartInForm.value = true;
+    addressDialogOpen.value = true;
+  }
 }
 
 function selectVouchers(
@@ -535,26 +621,8 @@ function removeSelectedVouchers(): void {
   selectedShippingVoucherId.value = "";
 }
 
-function deliveryOrderPayload(): DeliveryOrderPayload | null {
-  const addressId = shippingAddressId.value;
-  const quote = shippingQuoteQuery.data.value;
-  const paymentMethod = paymentPayloadValue.value;
-  if (
-    addressId === null ||
-    !quote ||
-    quoteHasExpired(quote.expiresAt) ||
-    !/^[a-f0-9]{64}$/.test(quote.quoteToken) ||
-    paymentMethod === null
-  ) {
-    return null;
-  }
-
-  return {
-    delivery_method: "delivery",
-    address_id: addressId,
-    shipping_quote_token: quote.quoteToken,
-    payment_method: paymentMethod,
-  };
+function checkoutOrderPayload(): CreateCustomerOrderRequest | null {
+  return checkoutPreviewPayload.value;
 }
 
 const orderAttemptStorageKey = computed(() =>
@@ -563,7 +631,7 @@ const orderAttemptStorageKey = computed(() =>
     : `${ORDER_ATTEMPT_STORAGE_PREFIX}:${userId.value}`,
 );
 
-function orderPayloadFingerprint(payload: DeliveryOrderPayload): string {
+function orderPayloadFingerprint(payload: CreateCustomerOrderRequest): string {
   return JSON.stringify({
     payload,
     cart: {
@@ -615,7 +683,9 @@ function clearOrderAttempt(): void {
   if (storageKey) window.sessionStorage.removeItem(storageKey);
 }
 
-function orderAttemptFor(payload: DeliveryOrderPayload): CheckoutOrderAttempt {
+function orderAttemptFor(
+  payload: CreateCustomerOrderRequest,
+): CheckoutOrderAttempt {
   const fingerprint = orderPayloadFingerprint(payload);
   if (orderAttempt.value?.fingerprint === fingerprint)
     return orderAttempt.value;
@@ -636,18 +706,18 @@ function orderAttemptFor(payload: DeliveryOrderPayload): CheckoutOrderAttempt {
 }
 
 const currentOrderPayloadFingerprint = computed(() => {
-  const payload = deliveryOrderPayload();
+  const payload = checkoutOrderPayload();
   return payload ? orderPayloadFingerprint(payload) : null;
 });
 
 function openOrderConfirmation(): void {
-  const payload = deliveryOrderPayload();
+  const payload = checkoutOrderPayload();
   if (!canPlaceOrder.value || !payload || totals.value.total === null) return;
   createOrderMutation.reset();
   orderNotice.value = "";
   confirmationSnapshot.value = {
-    addressId: payload.address_id,
-    quoteToken: payload.shipping_quote_token,
+    payload,
+    fingerprint: orderPayloadFingerprint(payload),
     expectedTotal: totals.value.total,
   };
   confirmationDialogOpen.value = true;
@@ -684,22 +754,24 @@ async function confirmOrder(): Promise<void> {
   if (createOrderMutation.isPending.value) return;
   const snapshot = confirmationSnapshot.value;
   const quote = shippingQuoteQuery.data.value;
-  if (!snapshot || !quote) {
+  if (!snapshot) {
     closeOrderConfirmation();
     orderNotice.value =
       "Thông tin đặt hàng đã thay đổi. Vui lòng xác nhận lại.";
     return;
   }
-  if (quoteHasExpired(quote.expiresAt)) {
+  if (
+    fulfillmentMethod.value === "delivery" &&
+    (!quote || quoteHasExpired(quote.expiresAt))
+  ) {
     await refreshExpiredQuote(snapshot.expectedTotal);
     return;
   }
 
-  const payload = deliveryOrderPayload();
+  const payload = checkoutOrderPayload();
   if (
     !payload ||
-    payload.address_id !== snapshot.addressId ||
-    payload.shipping_quote_token !== snapshot.quoteToken ||
+    orderPayloadFingerprint(payload) !== snapshot.fingerprint ||
     totals.value.total !== snapshot.expectedTotal
   ) {
     closeOrderConfirmation();
@@ -719,13 +791,39 @@ async function confirmOrder(): Promise<void> {
     confirmationSnapshot.value = null;
     orderSucceeded.value = true;
     createdOrder.value = order;
-    queryClient.removeQueries({
-      queryKey: customerShippingQuoteKeys.detail(snapshot.addressId),
-      exact: true,
-    });
+    if (snapshot.payload.delivery_method === "delivery") {
+      queryClient.removeQueries({
+        queryKey: customerShippingQuoteKeys.detail(snapshot.payload.address_id),
+        exact: true,
+      });
+    }
+    if (order.paymentMethod === "wallet" && userId.value !== null) {
+      await queryClient.invalidateQueries({
+        queryKey: customerWalletKeys.detail(userId.value),
+      });
+    }
     await cartQuery.refetch();
+    if (order.paymentMethod === "vnpay") await startVnPayPayment(order);
   } catch {
     // The normalized mutation error remains visible in the confirmation dialog.
+  }
+}
+
+async function startVnPayPayment(order: CreatedCustomerOrder): Promise<void> {
+  vnPayRedirectError.value = "";
+  try {
+    const payment = await createVnPayUrlMutation.mutateAsync(order.id);
+    persistVnPayReturnContext({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      paymentNumber: payment.paymentNumber,
+    });
+    redirectToVnPay(payment.paymentUrl);
+  } catch (error) {
+    vnPayRedirectError.value = errorMessage(
+      error,
+      "Không thể mở cổng thanh toán VNPay. Vui lòng thử lại.",
+    );
   }
 }
 
@@ -849,6 +947,42 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
             </section>
 
             <section
+              class="grid grid-cols-2 gap-2 rounded-2xl border border-primary-100 bg-white p-2 shadow-xs"
+              aria-label="Phương thức nhận hàng"
+              data-fulfillment-selector
+            >
+              <button
+                type="button"
+                class="motion-interactive min-h-12 rounded-xl px-3 text-body-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                :class="
+                  fulfillmentMethod === 'delivery'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-primary-800 hover:bg-primary-50'
+                "
+                :aria-pressed="fulfillmentMethod === 'delivery'"
+                data-fulfillment="delivery"
+                @click="selectFulfillment('delivery')"
+              >
+                Giao hàng tận nơi
+              </button>
+              <button
+                type="button"
+                class="motion-interactive min-h-12 rounded-xl px-3 text-body-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                :class="
+                  fulfillmentMethod === 'pickup'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-primary-800 hover:bg-primary-50'
+                "
+                :aria-pressed="fulfillmentMethod === 'pickup'"
+                data-fulfillment="pickup"
+                @click="selectFulfillment('pickup')"
+              >
+                Nhận hàng tại cửa hàng
+              </button>
+            </section>
+
+            <section
+              v-if="fulfillmentMethod === 'delivery'"
               class="rounded-2xl border border-primary-100 bg-white p-3.5 shadow-xs sm:p-4"
               aria-labelledby="delivery-address-heading"
               data-delivery-section
@@ -1060,6 +1194,60 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
                     </details>
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section
+              v-else
+              class="rounded-2xl border border-primary-100 bg-white p-3.5 shadow-xs sm:p-4"
+              aria-labelledby="pickup-heading"
+              data-pickup-section
+            >
+              <div class="flex items-center gap-3">
+                <span
+                  class="grid size-10 flex-none place-items-center rounded-full bg-primary-100 text-primary-700"
+                >
+                  <Store class="size-5" aria-hidden="true" />
+                </span>
+                <div class="min-w-0">
+                  <h2
+                    id="pickup-heading"
+                    class="text-body-lg font-semibold text-primary-950"
+                  >
+                    Nhận hàng tại cửa hàng
+                  </h2>
+                  <p class="mt-0.5 text-caption text-text-secondary">
+                    Không phát sinh phí vận chuyển GHN.
+                  </p>
+                </div>
+              </div>
+              <div
+                v-if="cartBranch"
+                class="mt-4 rounded-2xl bg-primary-50 p-4"
+                data-pickup-branch
+              >
+                <strong class="text-primary-950">{{ cartBranch.name }}</strong>
+                <p
+                  class="mt-1 break-words text-body-sm leading-5 text-text-secondary"
+                >
+                  {{ cartBranch.address }}
+                </p>
+              </div>
+              <div
+                class="mt-3 rounded-2xl border border-primary-100 p-4"
+                data-pickup-customer
+              >
+                <p
+                  class="text-caption font-semibold uppercase tracking-wide text-primary-700"
+                >
+                  Thông tin người nhận
+                </p>
+                <p class="mt-2 font-semibold text-primary-950">
+                  {{ authStore.user?.name }}
+                </p>
+                <p class="mt-1 text-body-sm text-text-secondary">
+                  {{ authStore.user?.phone || authStore.user?.email }}
+                </p>
               </div>
             </section>
 
@@ -1332,7 +1520,18 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
               >
                 <div class="flex items-center justify-between gap-3">
                   <span class="flex items-center gap-2">
+                    <WalletCards
+                      v-if="paymentMethodId === 'wallet'"
+                      class="size-4.5 text-primary-700"
+                      aria-hidden="true"
+                    />
                     <Banknote
+                      v-else-if="paymentMethodId === 'cod'"
+                      class="size-4.5 text-primary-700"
+                      aria-hidden="true"
+                    />
+                    <QrCode
+                      v-else
                       class="size-4.5 text-primary-700"
                       aria-hidden="true"
                     />
@@ -1354,6 +1553,40 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
                   data-selected-payment
                 >
                   {{ selectedPayment?.name }}
+                </p>
+                <p
+                  v-if="
+                    paymentMethodId === 'wallet' &&
+                    selectedPayment?.balanceState === 'loading'
+                  "
+                  class="mt-1 text-caption text-text-secondary"
+                  role="status"
+                  data-selected-wallet-balance-loading
+                >
+                  Đang tải số dư ví...
+                </p>
+                <p
+                  v-else-if="
+                    paymentMethodId === 'wallet' &&
+                    selectedPayment?.balanceState === 'ready' &&
+                    selectedPayment.balance !== undefined
+                  "
+                  class="mt-1 text-caption text-primary-800"
+                  data-selected-wallet-balance
+                >
+                  Số dư khả dụng:
+                  {{ currencyFormatter.format(selectedPayment.balance) }}
+                </p>
+                <p
+                  v-else-if="
+                    paymentMethodId === 'wallet' &&
+                    selectedPayment?.balanceState === 'error'
+                  "
+                  class="mt-1 text-caption text-[#8f493f]"
+                  role="status"
+                  data-selected-wallet-balance-error
+                >
+                  Không thể tải số dư. Hệ thống sẽ xác nhận khi đặt hàng.
                 </p>
               </section>
 
@@ -1535,9 +1768,18 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
             >
               <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
                 <dt class="text-text-secondary">Cách nhận hàng</dt>
-                <dd class="font-semibold text-primary-950">Giao tận nơi</dd>
+                <dd class="font-semibold text-primary-950">
+                  {{
+                    fulfillmentMethod === "delivery"
+                      ? "Giao tận nơi"
+                      : "Nhận tại cửa hàng"
+                  }}
+                </dd>
               </div>
-              <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+              <div
+                v-if="fulfillmentMethod === 'delivery'"
+                class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3"
+              >
                 <dt class="text-text-secondary">Người nhận</dt>
                 <dd class="min-w-0 font-semibold text-primary-950">
                   {{ selectedAddress?.fullName }} · {{ selectedAddress?.phone }}
@@ -1546,6 +1788,15 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
                     class="mt-1 block break-words font-normal text-text-secondary"
                     >{{ addressText(selectedAddress) }}</span
                   >
+                </dd>
+              </div>
+              <div v-else class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
+                <dt class="text-text-secondary">Người nhận</dt>
+                <dd class="min-w-0 font-semibold text-primary-950">
+                  {{ authStore.user?.name }}
+                  <span class="mt-1 block font-normal text-text-secondary">{{
+                    authStore.user?.phone || authStore.user?.email
+                  }}</span>
                 </dd>
               </div>
               <div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-3">
@@ -1659,10 +1910,18 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
               id="order-success-title"
               class="mt-5 text-heading-2 text-emerald-800"
             >
-              Đặt hàng thành công
+              {{
+                createdOrder?.paymentMethod === "vnpay"
+                  ? "Đơn hàng đã được tạo"
+                  : "Đặt hàng thành công"
+              }}
             </h2>
             <p class="mt-2 text-body-sm text-text-secondary">
-              Mizuki đã xác nhận đơn hàng của bạn.
+              {{
+                createdOrder?.paymentMethod === "vnpay"
+                  ? "Tiếp tục tới VNPay để hoàn tất thanh toán."
+                  : "Mizuki đã xác nhận đơn hàng của bạn."
+              }}
             </p>
             <div
               class="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-left text-body-sm"
@@ -1681,7 +1940,11 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
               </p>
               <p class="mt-3 flex justify-between gap-4">
                 <span class="text-text-secondary">Cách nhận hàng</span
-                ><strong>Giao tận nơi</strong>
+                ><strong>{{
+                  createdOrder.deliveryMethod === "delivery"
+                    ? "Giao tận nơi"
+                    : "Nhận tại cửa hàng"
+                }}</strong>
               </p>
               <p class="mt-3 flex justify-between gap-4">
                 <span class="text-text-secondary">Trạng thái</span
@@ -1690,9 +1953,31 @@ watch(currentOrderPayloadFingerprint, (fingerprint, previousFingerprint) => {
                 }}</strong>
               </p>
             </div>
+            <p
+              v-if="vnPayRedirectError"
+              class="mt-4 rounded-xl bg-destructive/10 px-3 py-2 text-body-sm text-destructive"
+              role="alert"
+              data-vnpay-redirect-error
+            >
+              {{ vnPayRedirectError }}
+            </p>
+            <button
+              v-if="createdOrder.paymentMethod === 'vnpay'"
+              type="button"
+              class="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground disabled:opacity-60"
+              :disabled="createVnPayUrlMutation.isPending.value"
+              data-continue-vnpay
+              @click="startVnPayPayment(createdOrder)"
+            >
+              {{
+                createVnPayUrlMutation.isPending.value
+                  ? "Đang mở VNPay..."
+                  : "Tiếp tục thanh toán VNPay"
+              }}
+            </button>
             <RouterLink
               :to="{ name: ROUTE_NAMES.products }"
-              class="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 font-semibold text-primary-foreground"
+              class="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-primary-200 px-5 font-semibold text-primary-800"
               data-continue-shopping
             >
               Tiếp tục mua sắm
