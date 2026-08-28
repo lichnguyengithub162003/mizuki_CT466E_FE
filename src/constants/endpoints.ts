@@ -23,6 +23,7 @@ export const ENDPOINTS = {
     `/customer/addresses/${addressId}/default`,
   customerShippingQuote: '/customer/shipping/quote',
   customerOrders: '/customer/orders',
+  customerOrder: (orderId: number) => `/customer/orders/${orderId}`,
   branches: '/branches',
   products: '/products',
 } as const

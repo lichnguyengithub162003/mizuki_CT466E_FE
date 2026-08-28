@@ -115,6 +115,24 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer', requiresAuth: true },
   },
   {
+    path: ROUTE_PATHS.customerOrders,
+    name: ROUTE_NAMES.customerOrders,
+    component: () => import('@/pages/customer/CustomerOrdersPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  ...(import.meta.env.DEV ? [{
+    path: ROUTE_PATHS.customerOrderPreviewDetail,
+    name: ROUTE_NAMES.customerOrderPreviewDetail,
+    component: () => import('@/pages/customer/CustomerOrderDetailPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  } satisfies RouteRecordRaw] : []),
+  {
+    path: ROUTE_PATHS.customerOrderDetail,
+    name: ROUTE_NAMES.customerOrderDetail,
+    component: () => import('@/pages/customer/CustomerOrderDetailPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
     path: ROUTE_PATHS.skinCare,
     name: ROUTE_NAMES.skinCare,
     component: () => import('@/pages/clinic/SkinCarePage.vue'),

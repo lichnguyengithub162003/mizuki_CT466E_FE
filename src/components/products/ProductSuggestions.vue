@@ -7,12 +7,14 @@ import { ROUTE_NAMES } from '@/constants/routes'
 import type { ProductContentState, ProductListingProduct } from '@/types/products'
 import { cn } from '@/utils/cn'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   products: readonly ProductListingProduct[]
   state?: ProductContentState
   favoriteIds?: ReadonlySet<string>
   favoritePending?: boolean
-}>()
+  layout?: 'carousel' | 'six-column-grid'
+  showHeader?: boolean
+}>(), { layout: 'carousel', showHeader: true })
 
 defineEmits<{
   retry: []
@@ -98,12 +100,13 @@ function handleKeyboard(event: KeyboardEvent): void {
 
 <template>
   <section
-    class="group/suggestions rounded-3xl border border-primary-100 bg-[#edf4f0] px-4 py-6 sm:px-6"
-    aria-labelledby="product-suggestion-heading"
+    :class="['group/suggestions rounded-3xl px-4 py-6 sm:px-6', props.showHeader ? 'border border-primary-100 bg-[#edf4f0]' : 'bg-white shadow-[0_10px_34px_rgba(25,52,42,0.055)] ring-1 ring-black/[0.045]']"
+    :aria-labelledby="props.showHeader ? 'product-suggestion-heading' : undefined"
+    :aria-label="props.showHeader ? undefined : 'Có thể bạn cũng thích'"
     data-suggestion-carousel
     :data-active-index="activeIndex"
   >
-    <div class="flex items-end justify-between gap-4">
+    <div v-if="props.showHeader" class="flex items-end justify-between gap-4">
       <div class="max-w-2xl">
         <p class="text-caption font-semibold uppercase tracking-[0.14em] text-primary-700">
           Gợi ý dành cho bạn
@@ -131,7 +134,9 @@ function handleKeyboard(event: KeyboardEvent): void {
     <div v-else class="relative mt-4">
       <div
         ref="carousel"
-        class="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        :class="props.layout === 'six-column-grid'
+          ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'
+          : 'flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'"
         data-suggestion-row
         role="region"
         aria-label="Danh sách sản phẩm gợi ý"
@@ -141,7 +146,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         <article
           v-for="(product, index) in props.products"
           :key="`suggested-${product.id}`"
-          class="group/card flex h-full min-w-0 w-auto shrink-0 basis-[58%] snap-start flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xs sm:basis-[13rem] md:basis-[calc((100%_-_2.25rem)/4)] xl:basis-[calc((100%_-_3.75rem)/6)]"
+          :class="cn('group/card flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xs', props.layout === 'six-column-grid' ? 'w-full' : 'w-auto shrink-0 basis-[58%] snap-start sm:basis-[13rem] md:basis-[calc((100%_-_2.25rem)/4)] xl:basis-[calc((100%_-_3.75rem)/6)]')"
           :aria-labelledby="`compact-product-${product.id}`"
           data-compact-product-card
           data-suggested-product
@@ -208,7 +213,7 @@ function handleKeyboard(event: KeyboardEvent): void {
             </div>
             <RouterLink
               :to="{ name: ROUTE_NAMES.productDetail, params: { slug: product.slug } }"
-              class="motion-interactive mt-auto inline-flex min-h-9 w-full items-center justify-center rounded-xl bg-primary-800 px-3 py-2 text-body-sm font-semibold text-primary-foreground hover:bg-primary-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              class="motion-interactive mt-4 inline-flex min-h-9 w-full items-center justify-center rounded-xl bg-primary-800 px-3 py-2 text-body-sm font-semibold text-primary-foreground hover:bg-primary-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               :aria-label="`Xem sản phẩm ${product.name}`"
               data-suggestion-product-action
             >
@@ -219,6 +224,7 @@ function handleKeyboard(event: KeyboardEvent): void {
       </div>
 
       <button
+        v-if="props.layout === 'carousel'"
         type="button"
         class="motion-interactive absolute left-1 top-1/2 z-10 grid size-10 -translate-y-1/2 place-items-center rounded-full border border-white bg-white/95 text-primary-900 opacity-90 shadow-sm focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-35 md:opacity-0 md:group-hover/suggestions:opacity-100 md:group-focus-within/suggestions:opacity-100"
         aria-label="Xem sản phẩm gợi ý trước"
@@ -228,6 +234,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         <ChevronLeft class="size-4.5" aria-hidden="true" />
       </button>
       <button
+        v-if="props.layout === 'carousel'"
         type="button"
         class="motion-interactive absolute right-1 top-1/2 z-10 grid size-10 -translate-y-1/2 place-items-center rounded-full border border-white bg-white/95 text-primary-900 opacity-90 shadow-sm focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-35 md:opacity-0 md:group-hover/suggestions:opacity-100 md:group-focus-within/suggestions:opacity-100"
         aria-label="Xem sản phẩm gợi ý tiếp theo"
