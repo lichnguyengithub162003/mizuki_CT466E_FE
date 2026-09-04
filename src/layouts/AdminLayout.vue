@@ -1,48 +1,62 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import AdminBottomNavigation from '@/components/layout/AdminBottomNavigation.vue'
-import AdminHeader from '@/components/layout/AdminHeader.vue'
+import { Menu } from '@lucide/vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
+import AdminDrawer from '@/components/admin/AdminDrawer.vue'
+import AdminLogoutButton from '@/components/admin/AdminLogoutButton.vue'
+import AdminOrderPendingBadge from '@/components/admin/AdminOrderPendingBadge.vue'
 import AdminSidebar from '@/components/layout/AdminSidebar.vue'
-import AdminTopNavigation from '@/components/layout/AdminTopNavigation.vue'
-import PageContainer from '@/components/layout/PageContainer.vue'
-import { isAdminNavigationKey, type AdminNavigationKey } from '@/types/layout/adminNavigation'
+import BaseButton from '@/components/common/BaseButton.vue'
+import {
+  ADMIN_NAVIGATION_ITEMS,
+  type AdminNavigationKey,
+} from '@/types/layout/adminNavigation'
 
-defineSlots<{
+const slots = defineSlots<{
   default?: () => unknown
-  'header-actions'?: () => unknown
   'page-header'?: () => unknown
 }>()
-
 const route = useRoute()
-const sidebarCollapsed = ref(false)
-const activeKey = computed<AdminNavigationKey>(() => {
-  const section = route.query.section
-  return isAdminNavigationKey(section) ? section : 'overview'
-})
+const collapsed = ref(false)
+const drawer = ref(false)
+const isOrdersWorkspace = computed(() => route.path === '/admin/orders')
+const activeKey = computed<AdminNavigationKey>(() =>
+  ADMIN_NAVIGATION_ITEMS.find(
+    (item) => route.path === item.to || route.path.startsWith(`${item.to}/`),
+  )?.key ?? 'overview',
+)
 </script>
 
 <template>
-  <div class="admin-premium-canvas min-h-svh overflow-x-clip text-foreground">
-    <AdminTopNavigation :active-key="activeKey" />
-    <div class="w-full px-2 sm:px-3 lg:flex lg:gap-3 lg:px-3 lg:py-3 xl:gap-4 xl:px-4 xl:py-4">
+  <div class="admin-premium-canvas h-dvh overflow-hidden">
+    <div class="flex h-full min-h-0 w-full gap-3 p-2 sm:p-3">
       <AdminSidebar
-        :collapsed="sidebarCollapsed"
+        :collapsed="collapsed"
         :active-key="activeKey"
-        @toggle="sidebarCollapsed = !sidebarCollapsed"
+        @toggle="collapsed = !collapsed"
       />
-      <div class="relative z-1 min-w-0 flex-1 overflow-hidden bg-background/92 lg:rounded-3xl lg:border lg:border-white/80 lg:shadow-sm">
-        <AdminHeader>
-          <template #actions><slot name="header-actions" /></template>
-        </AdminHeader>
-        <main class="pb-24 md:pb-0" tabindex="-1">
-          <PageContainer class="pb-10 pt-5 sm:pb-12 md:pt-6 lg:pb-14">
-            <slot name="page-header" />
-            <slot />
-          </PageContainer>
-        </main>
-      </div>
+      <main :class="['relative min-h-0 min-w-0 flex-1', isOrdersWorkspace ? 'flex flex-col overflow-hidden' : 'overflow-y-auto']" tabindex="-1">
+        <slot name="page-header" />
+        <slot v-if="slots.default" />
+        <RouterView v-else />
+      </main>
     </div>
-    <AdminBottomNavigation :active-key="activeKey" />
+    <BaseButton class="fixed bottom-4 right-4 z-40 shadow-md lg:hidden" size="icon" aria-label="Mở menu quản trị" @click="drawer = true"><Menu /></BaseButton>
+    <AdminDrawer v-model="drawer" title="Điều hướng quản trị">
+      <nav class="grid gap-1">
+        <RouterLink
+          v-for="item in ADMIN_NAVIGATION_ITEMS"
+          :key="item.key"
+          :to="item.to"
+          class="flex items-center gap-3 rounded-xl px-3 py-3 text-body-sm hover:bg-surface-subtle"
+          @click="drawer = false"
+        >
+          <component :is="item.icon" class="size-5" />
+          {{ item.label }}
+          <AdminOrderPendingBadge v-if="item.key === 'orders'" />
+        </RouterLink>
+      </nav>
+      <div class="mt-3 border-t border-border pt-3"><AdminLogoutButton /></div>
+    </AdminDrawer>
   </div>
 </template>

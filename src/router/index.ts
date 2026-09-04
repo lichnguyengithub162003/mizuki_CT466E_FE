@@ -13,6 +13,25 @@ import { isMobileOnboardingViewport } from '@/utils/auth/mobileOnboarding'
 
 const routes: readonly RouteRecordRaw[] = [
   {
+    path: '/admin/login',
+    name: 'admin-login',
+    component: () => import('@/pages/admin/AdminLoginPage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: '/admin',
+    component: () => import('@/layouts/AdminLayout.vue'),
+    meta: { layout: 'admin', requiresAdmin: true },
+    children: [
+      { path: '', redirect: '/admin/orders' },
+      {
+        path: 'orders',
+        name: 'admin-orders',
+        component: () => import('@/pages/admin/AdminOrdersListPage.vue'),
+      },
+    ],
+  },
+  {
     path: ROUTE_PATHS.onboarding,
     name: ROUTE_NAMES.onboarding,
     component: () => import('@/pages/auth/OnboardingPage.vue'),
@@ -174,11 +193,11 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
   appRouter.beforeEach(async (to) => {
     const authStore = useAuthStore(pinia)
 
-    if ((to.meta.guestOnly || to.meta.requiresAuth) && !authStore.isInitialized) {
+    if ((to.meta.guestOnly || to.meta.requiresAuth || to.meta.requiresAdmin) && !authStore.isInitialized) {
       await authStore.restoreSession()
     }
 
-    if (to.meta.guestOnly && authStore.isAuthenticated) {
+    if (to.meta.guestOnly && authStore.isAuthenticated && to.name !== 'admin-login') {
       return { name: 'customer-home' }
     }
 
@@ -187,6 +206,20 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
         name: ROUTE_NAMES.login,
         query: { redirect: to.fullPath },
       }
+    }
+
+    if (to.meta.requiresAdmin && !authStore.isAuthenticated) {
+      return { name: 'admin-login', query: { redirect: to.fullPath } }
+    }
+
+    if (to.meta.requiresAdmin && !authStore.isAdmin) {
+      return { name: ROUTE_NAMES.forbidden }
+    }
+
+    if (to.name === 'admin-login' && authStore.isAuthenticated) {
+      return authStore.isAdmin
+        ? { name: 'admin-orders' }
+        : { name: ROUTE_NAMES.forbidden }
     }
 
     if (to.name === ROUTE_NAMES.verifyResetCode && !canAccessResetCode()) {

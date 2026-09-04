@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   getCurrentUser,
   login as loginRequest,
+  staffLogin as staffLoginRequest,
   logout as logoutRequest,
   register as registerRequest,
 } from '@/api/auth/authApi'
@@ -28,6 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isInitialized = ref(false)
   const isAuthenticated = computed(() => user.value !== null)
   const role = computed(() => user.value?.role ?? null)
+  const isAdmin = computed(() => role.value === 'super_admin' || role.value === 'branch_manager')
 
   async function login(payload: LoginPayload): Promise<AuthenticatedUser> {
     const authenticatedUser = await loginRequest(payload)
@@ -38,6 +40,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(payload: RegisterPayload): Promise<AuthenticatedUser> {
     const authenticatedUser = await registerRequest(payload)
+    user.value = authenticatedUser
+    isInitialized.value = true
+    return authenticatedUser
+  }
+
+  async function staffLogin(payload: LoginPayload): Promise<AuthenticatedUser> {
+    const authenticatedUser = await staffLoginRequest(payload)
     user.value = authenticatedUser
     isInitialized.value = true
     return authenticatedUser
@@ -67,9 +76,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout(): Promise<void> {
-    await logoutRequest()
-    user.value = null
-    isInitialized.value = true
+    try {
+      await logoutRequest()
+    } finally {
+      user.value = null
+      isInitialized.value = true
+    }
   }
 
   function clearSession(): void {
@@ -90,7 +102,9 @@ export const useAuthStore = defineStore('auth', () => {
     isInitializing,
     isInitialized,
     role,
+    isAdmin,
     login,
+    staffLogin,
     register,
     restoreSession,
     logout,

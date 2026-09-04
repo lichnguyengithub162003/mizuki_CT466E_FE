@@ -91,12 +91,6 @@ const chartBars = [36, 48, 42, 62, 57, 76, 68, 84, 72, 91, 78, 96] as const
 
 <template>
   <AdminLayout>
-    <template #header-actions>
-      <BaseButton variant="outline" size="sm" class="hidden border-white/80 bg-surface/70 sm:inline-flex">
-        Trợ giúp
-      </BaseButton>
-    </template>
-
     <template #page-header>
       <section
         class="admin-glass-panel relative overflow-hidden rounded-3xl px-5 py-6 sm:px-7 sm:py-7 lg:px-8"

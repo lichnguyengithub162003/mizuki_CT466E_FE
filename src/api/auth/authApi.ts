@@ -31,6 +31,10 @@ export async function login(payload: LoginPayload): Promise<AuthenticatedUser> {
   return (await postWithCsrf<AuthenticatedUser, LoginPayload>(ENDPOINTS.authLogin, payload)).data
 }
 
+export async function staffLogin(payload: LoginPayload): Promise<AuthenticatedUser> {
+  return (await postWithCsrf<AuthenticatedUser, LoginPayload>(ENDPOINTS.authStaffLogin, payload)).data
+}
+
 export async function register(payload: RegisterPayload): Promise<AuthenticatedUser> {
   return (await postWithCsrf<AuthenticatedUser, RegisterPayload>(ENDPOINTS.authRegister, payload)).data
 }

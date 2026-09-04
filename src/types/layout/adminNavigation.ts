@@ -1,51 +1,10 @@
 import type { Component } from 'vue'
-import type { RouteLocationRaw } from 'vue-router'
-import {
-  Boxes,
-  LayoutDashboard,
-  Package,
-  RotateCcw,
-  Settings,
-  ShoppingBag,
-  Users,
-} from '@lucide/vue'
-
-export type AdminNavigationKey =
-  | 'overview'
-  | 'orders'
-  | 'refunds'
-  | 'products'
-  | 'inventory'
-  | 'staff'
-  | 'settings'
-
-export interface AdminNavigationItem {
-  key: AdminNavigationKey
-  label: string
-  icon: Component
-  to: RouteLocationRaw
-  primary: boolean
-}
-
-function createDemoRoute(key: AdminNavigationKey): RouteLocationRaw {
-  return key === 'overview'
-    ? { path: '/admin-shell' }
-    : { path: '/admin-shell', query: { section: key } }
-}
-
+import { LayoutDashboard, ShoppingBag, Store, RotateCcw, Truck, CalendarDays, Users, Package, Tags, BadgeCheck, Boxes, TicketPercent, Star, Building2, UserCog } from '@lucide/vue'
+export type AdminNavigationKey = 'overview'|'orders'|'pos'|'refunds'|'shipping'|'appointments'|'customers'|'products'|'categories'|'brands'|'inventory'|'promotions'|'reviews'|'branches'|'staff'
+export type AdminNavigationGroup = 'Tổng quan'|'Bán hàng'|'Đặt lịch'|'Khách hàng'|'Sản phẩm'|'Khuyến mãi'|'Đánh giá'|'Hệ thống'
+export interface AdminNavigationItem { key: AdminNavigationKey; label: string; icon: Component; to: string; group: AdminNavigationGroup; primary: boolean }
 export const ADMIN_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
-  { key: 'overview', label: 'Tổng quan', icon: LayoutDashboard, to: createDemoRoute('overview'), primary: true },
-  { key: 'orders', label: 'Đơn hàng', icon: ShoppingBag, to: createDemoRoute('orders'), primary: true },
-  { key: 'refunds', label: 'Hoàn tiền', icon: RotateCcw, to: createDemoRoute('refunds'), primary: false },
-  { key: 'products', label: 'Sản phẩm', icon: Package, to: createDemoRoute('products'), primary: true },
-  { key: 'inventory', label: 'Tồn kho', icon: Boxes, to: createDemoRoute('inventory'), primary: true },
-  { key: 'staff', label: 'Nhân viên', icon: Users, to: createDemoRoute('staff'), primary: false },
-  { key: 'settings', label: 'Cài đặt', icon: Settings, to: createDemoRoute('settings'), primary: false },
+  {key:'overview',label:'Tổng quan',icon:LayoutDashboard,to:'/admin/dashboard',group:'Tổng quan',primary:true},{key:'orders',label:'Đơn hàng',icon:ShoppingBag,to:'/admin/orders',group:'Bán hàng',primary:true},{key:'pos',label:'POS tại quầy',icon:Store,to:'/pos/orders/new',group:'Bán hàng',primary:false},{key:'refunds',label:'Hoàn tiền',icon:RotateCcw,to:'/admin/refunds',group:'Bán hàng',primary:false},{key:'shipping',label:'Vận chuyển',icon:Truck,to:'/admin/shipping',group:'Bán hàng',primary:false},{key:'appointments',label:'Lịch hẹn',icon:CalendarDays,to:'/admin/appointments',group:'Đặt lịch',primary:true},{key:'customers',label:'Khách hàng',icon:Users,to:'/admin/customers',group:'Khách hàng',primary:true},{key:'products',label:'Sản phẩm',icon:Package,to:'/admin/products',group:'Sản phẩm',primary:true},{key:'categories',label:'Danh mục',icon:Tags,to:'/admin/categories',group:'Sản phẩm',primary:false},{key:'brands',label:'Thương hiệu',icon:BadgeCheck,to:'/admin/brands',group:'Sản phẩm',primary:false},{key:'inventory',label:'Tồn kho',icon:Boxes,to:'/admin/inventory',group:'Sản phẩm',primary:true},{key:'promotions',label:'Khuyến mãi',icon:TicketPercent,to:'/admin/promotions',group:'Khuyến mãi',primary:false},{key:'reviews',label:'Đánh giá',icon:Star,to:'/admin/reviews',group:'Đánh giá',primary:false},{key:'branches',label:'Chi nhánh',icon:Building2,to:'/admin/branches',group:'Hệ thống',primary:false},{key:'staff',label:'Nhân viên',icon:UserCog,to:'/admin/staff',group:'Hệ thống',primary:false},
 ]
-
-export const ADMIN_PRIMARY_NAVIGATION = ADMIN_NAVIGATION_ITEMS.filter((item) => item.primary)
-export const ADMIN_SECONDARY_NAVIGATION = ADMIN_NAVIGATION_ITEMS.filter((item) => !item.primary)
-
-export function isAdminNavigationKey(value: unknown): value is AdminNavigationKey {
-  return typeof value === 'string' && ADMIN_NAVIGATION_ITEMS.some((item) => item.key === value)
-}
+export const ADMIN_PRIMARY_NAVIGATION=ADMIN_NAVIGATION_ITEMS.filter(i=>i.primary); export const ADMIN_SECONDARY_NAVIGATION=ADMIN_NAVIGATION_ITEMS.filter(i=>!i.primary)
+export function isAdminNavigationKey(value:unknown):value is AdminNavigationKey{return typeof value==='string'&&ADMIN_NAVIGATION_ITEMS.some(i=>i.key===value)}
