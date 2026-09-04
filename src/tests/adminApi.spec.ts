@@ -11,7 +11,7 @@ describe('admin API contracts', () => {
     vi.clearAllMocks()
     mocks.csrf.mockResolvedValue(undefined)
     mocks.request.mockResolvedValue({ data: { data: { id: 1 } } })
-    mocks.post.mockResolvedValue({ data: { data: { path: 'admin-media/a.webp', url: '/storage/admin-media/a.webp', mime_type: 'image/webp', size: 10 } } })
+    mocks.post.mockResolvedValue({ data: { data: { upload_token: '123e4567-e89b-12d3-a456-426614174000', preview_url: 'https://res.cloudinary.com/mizuki/image/upload/staging/a.webp', mime_type: 'image/webp', size: 10 } } })
   })
 
   it('unwraps the paginated envelope and preserves snake_case meta', async () => {
@@ -102,7 +102,12 @@ describe('admin API contracts', () => {
 
   it('uploads admin images as multipart after CSRF initialization', async () => {
     const file = new File(['image'], 'qa.webp', { type: 'image/webp' })
-    await uploadAdminImage(file)
+    await expect(uploadAdminImage(file)).resolves.toEqual({
+      upload_token: '123e4567-e89b-12d3-a456-426614174000',
+      preview_url: 'https://res.cloudinary.com/mizuki/image/upload/staging/a.webp',
+      mime_type: 'image/webp',
+      size: 10,
+    })
     expect(mocks.post).toHaveBeenCalledWith('/admin/media/images', expect.any(FormData))
     expect(mocks.csrf).toHaveBeenCalled()
   })

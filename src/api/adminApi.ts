@@ -150,10 +150,23 @@ export async function getPromotionUsage<T>(id: number | string): Promise<T> {
   return response.data.data
 }
 
-export async function uploadAdminImage(file: File): Promise<{ path: string; url: string; mime_type: string; size: number }> {
+export interface AdminImageUploadResult {
+  upload_token: string
+  preview_url: string
+  mime_type: string
+  size: number
+}
+
+export async function uploadAdminImage(file: File): Promise<AdminImageUploadResult> {
   await ensureCsrfCookie()
+
   const payload = new FormData()
   payload.append('image', file)
-  const response = await apiClient.post<ApiResponse<{ path: string; url: string; mime_type: string; size: number }>>(ENDPOINTS.adminMediaImages, payload)
+
+  const response = await apiClient.post<ApiResponse<AdminImageUploadResult>>(
+    ENDPOINTS.adminMediaImages,
+    payload,
+  )
+
   return response.data.data
 }
