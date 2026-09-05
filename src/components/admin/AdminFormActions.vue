@@ -1,0 +1,2 @@
+<script setup lang="ts">import BaseButton from '@/components/common/BaseButton.vue'; defineProps<{ pending?: boolean; submitLabel?: string }>(); defineEmits<{ cancel: [] }>()</script>
+<template><div class="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-end"><BaseButton type="button" variant="outline" :disabled="pending" @click="$emit('cancel')">Hủy</BaseButton><BaseButton type="submit" :loading="pending" :disabled="pending">{{ submitLabel || 'Lưu thay đổi' }}</BaseButton></div></template>
