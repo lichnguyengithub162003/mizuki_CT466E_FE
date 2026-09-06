@@ -5,6 +5,7 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import AdminDrawer from '@/components/admin/AdminDrawer.vue'
 import AdminLogoutButton from '@/components/admin/AdminLogoutButton.vue'
 import AdminOrderPendingBadge from '@/components/admin/AdminOrderPendingBadge.vue'
+import AdminRefundPendingBadge from '@/components/admin/AdminRefundPendingBadge.vue'
 import AdminSidebar from '@/components/layout/AdminSidebar.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import {
@@ -19,7 +20,7 @@ const slots = defineSlots<{
 const route = useRoute()
 const collapsed = ref(false)
 const drawer = ref(false)
-const isOrdersWorkspace = computed(() => route.path === '/admin/orders')
+const isTableWorkspace = computed(() => ['/admin/orders', '/admin/refunds'].includes(route.path))
 const activeKey = computed<AdminNavigationKey>(() =>
   ADMIN_NAVIGATION_ITEMS.find(
     (item) => route.path === item.to || route.path.startsWith(`${item.to}/`),
@@ -35,7 +36,7 @@ const activeKey = computed<AdminNavigationKey>(() =>
         :active-key="activeKey"
         @toggle="collapsed = !collapsed"
       />
-      <main :class="['relative min-h-0 min-w-0 flex-1', isOrdersWorkspace ? 'flex flex-col overflow-hidden' : 'overflow-y-auto']" tabindex="-1">
+      <main :class="['relative min-h-0 min-w-0 flex-1', isTableWorkspace ? 'flex flex-col overflow-hidden' : 'overflow-y-auto']" tabindex="-1">
         <slot name="page-header" />
         <slot v-if="slots.default" />
         <RouterView v-else />
@@ -54,6 +55,7 @@ const activeKey = computed<AdminNavigationKey>(() =>
           <component :is="item.icon" class="size-5" />
           {{ item.label }}
           <AdminOrderPendingBadge v-if="item.key === 'orders'" />
+          <AdminRefundPendingBadge v-if="item.key === 'refunds'" />
         </RouterLink>
       </nav>
       <div class="mt-3 border-t border-border pt-3"><AdminLogoutButton /></div>

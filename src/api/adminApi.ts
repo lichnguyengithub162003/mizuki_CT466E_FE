@@ -2,7 +2,7 @@ import { apiClient } from '@/api/clients'
 import { ensureCsrfCookie } from '@/api/csrf'
 import { ENDPOINTS } from '@/constants/endpoints'
 import type { ApiResponse } from '@/types/api'
-import type { AdminListParams, AdminModule, AdminOrderCounts, AdminPage, AdminRecord } from '@/types/admin'
+import type { AdminListParams, AdminModule, AdminOrderCounts, AdminPage, AdminRecord, AdminRefundCounts } from '@/types/admin'
 
 const collections: Record<AdminModule, string> = {
   orders: ENDPOINTS.adminOrders,
@@ -79,6 +79,11 @@ export async function getAdminOrderCounts(): Promise<AdminOrderCounts> {
   return response.data.data
 }
 
+export async function getAdminRefundCounts(): Promise<AdminRefundCounts> {
+  const response = await apiClient.get<ApiResponse<AdminRefundCounts>>(ENDPOINTS.adminRefundCounts)
+  return response.data.data
+}
+
 async function mutate<T>(method: 'post' | 'patch' | 'put' | 'delete', endpoint: string, payload?: unknown): Promise<T> {
   await ensureCsrfCookie()
   const response = await apiClient.request<ApiResponse<T>>({ method, url: endpoint, data: payload })
@@ -122,7 +127,14 @@ export function runOrderAction<T>(id: number | string, action: string): Promise<
 }
 
 export function runRefundAction<T>(id: number | string, action: string, payload?: unknown): Promise<T> {
-  return mutate<T>('post', ENDPOINTS.adminRefundAction(id, action.replaceAll('_', '-')), payload)
+  const endpointAction = ({
+    wallet_payout: 'wallet-payout',
+    manual_settlement: 'manual-settlement',
+    return_receive: 'return/receive',
+    return_restock: 'return/restock',
+    return_not_restockable: 'return/not-restockable',
+  } as Record<string, string>)[action] ?? action.replaceAll('_', '-')
+  return mutate<T>('post', ENDPOINTS.adminRefundAction(id, endpointAction), payload)
 }
 
 export function runAppointmentAction<T>(id: number | string, action: string, payload?: unknown): Promise<T> {

@@ -1,6 +1,6 @@
 import { computed, type MaybeRefOrGetter, toValue } from 'vue'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { getAdminDetail, getAdminList, getAdminOrderCounts } from '@/api/adminApi'
+import { getAdminDetail, getAdminList, getAdminOrderCounts, getAdminRefundCounts } from '@/api/adminApi'
 import type { AdminListParams, AdminModule, AdminRecord } from '@/types/admin'
 
 export const adminKeys = {
@@ -9,6 +9,17 @@ export const adminKeys = {
   list: (module: AdminModule, params: AdminListParams) => ['admin', module, 'list', params] as const,
   detail: (module: AdminModule, id: number | string) => ['admin', module, 'detail', id] as const,
   orderCounts: ['admin', 'orders', 'counts'] as const,
+  refundCounts: ['admin', 'refunds', 'counts'] as const,
+}
+
+export function useAdminRefundCounts() {
+  return useQuery({
+    queryKey: adminKeys.refundCounts,
+    queryFn: getAdminRefundCounts,
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
+  })
 }
 
 export function useAdminOrderCounts() {
@@ -33,6 +44,18 @@ export function useAdminOrdersInfinite<T extends AdminRecord>(params: MaybeRefOr
   return useInfiniteQuery({
     queryKey: computed(() => ['admin', 'orders', 'infinite', toValue(params)]),
     queryFn: ({ pageParam }) => getAdminList<T>('orders', { ...toValue(params), page: pageParam }),
+    initialPageParam: 1,
+    placeholderData: (previous) => previous,
+    getNextPageParam: (lastPage) => lastPage.pagination.current_page < lastPage.pagination.last_page
+      ? lastPage.pagination.current_page + 1
+      : undefined,
+  })
+}
+
+export function useAdminRefundsInfinite<T extends AdminRecord>(params: MaybeRefOrGetter<AdminListParams>) {
+  return useInfiniteQuery({
+    queryKey: computed(() => ['admin', 'refunds', 'infinite', toValue(params)]),
+    queryFn: ({ pageParam }) => getAdminList<T>('refunds', { ...toValue(params), page: pageParam }),
     initialPageParam: 1,
     placeholderData: (previous) => previous,
     getNextPageParam: (lastPage) => lastPage.pagination.current_page < lastPage.pagination.last_page

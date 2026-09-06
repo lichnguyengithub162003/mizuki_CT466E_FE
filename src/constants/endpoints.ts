@@ -67,6 +67,7 @@ export const ENDPOINTS = {
   adminOrder: (id: number | string) => `/admin/orders/${id}`,
   adminOrderAction: (id: number | string, action: string) => `/admin/orders/${id}/${action}`,
   adminRefunds: '/admin/refunds',
+  adminRefundCounts: '/admin/refunds/counts',
   adminRefund: (id: number | string) => `/admin/refunds/${id}`,
   adminRefundAction: (id: number | string, action: string) => `/admin/refunds/${id}/${action}`,
   adminAppointments: '/admin/appointments',

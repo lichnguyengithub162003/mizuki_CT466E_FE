@@ -29,6 +29,7 @@ const routes: readonly RouteRecordRaw[] = [
         name: 'admin-orders',
         component: () => import('@/pages/admin/AdminOrdersListPage.vue'),
       },
+      { path: 'refunds', name: 'admin-refunds', component: () => import('@/pages/admin/AdminRefundsListPage.vue') },
     ],
   },
   {
