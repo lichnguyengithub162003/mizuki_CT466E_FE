@@ -18,6 +18,7 @@ import {
 const queryMocks = vi.hoisted(() => ({
   useOrders: vi.fn(),
   useOrder: vi.fn(),
+  useRefund: vi.fn(),
   useCart: vi.fn(),
   useAdd: vi.fn(),
   useProducts: vi.fn(),
@@ -29,6 +30,7 @@ const queryMocks = vi.hoisted(() => ({
 vi.mock("@/queries/orders", () => ({
   useCustomerOrdersInfiniteQuery: queryMocks.useOrders,
   useCustomerOrderQuery: queryMocks.useOrder,
+  useRequestOrderRefundMutation: queryMocks.useRefund,
 }));
 vi.mock("@/queries/cart", () => ({
   useCustomerCartQuery: queryMocks.useCart,
@@ -229,6 +231,10 @@ function configureQueries(
     isPending: ref(options.isPending ?? false),
     isError: ref(options.isError ?? false),
     refetch: vi.fn(),
+  });
+  queryMocks.useRefund.mockReturnValue({
+    isPending: ref(false),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
   });
   queryMocks.useCart.mockReturnValue({
     data: ref({ branch: { id: 8 } }),
@@ -918,6 +924,20 @@ describe("customer order history", () => {
 });
 
 describe("customer order detail", () => {
+  it("renders the authoritative full-order return/refund form only when eligible", async () => {
+    configureQueries({
+      order: makeOrder("delivered", 501, {
+        availableActions: { canRequestRefund: true },
+      }),
+    });
+    const { wrapper } = await mountPage(CustomerOrderDetailPage, "/orders/501");
+    const trigger = wrapper.findAll("button").find((button) => button.text().includes("Gửi yêu cầu trả hàng/hoàn tiền"));
+    expect(trigger).toBeTruthy();
+    await trigger!.trigger("click");
+    expect(wrapper.text()).toContain("Áp dụng cho toàn bộ đơn theo contract hiện tại");
+    expect(wrapper.get('input[type="file"]').attributes("accept")).toContain("video/mp4");
+  });
+
   it("renders grouped products, address snapshot, shipment, and collapsible authoritative money rows", async () => {
     const { wrapper } = await mountPage(CustomerOrderDetailPage, "/orders/4");
     expect(wrapper.text()).toContain("MZ-4");

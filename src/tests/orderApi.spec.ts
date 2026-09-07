@@ -3,15 +3,33 @@ import {
   createCustomerOrder,
   getCustomerOrder,
   getCustomerOrders,
+  requestCustomerOrderRefund,
 } from "@/api/orderApi";
 
 const client = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 
 vi.mock("@/api/clients", () => ({ apiClient: client }));
+vi.mock("@/api/csrf", () => ({ ensureCsrfCookie: vi.fn().mockResolvedValue(undefined) }));
 
 afterEach(() => {
   client.post.mockReset();
   client.get.mockReset();
+});
+
+it("submits the full-order refund contract as multipart evidence", async () => {
+  client.post.mockResolvedValue({ data: { data: {} } });
+  const evidence = new File(["proof"], "proof.jpg", { type: "image/jpeg" });
+  await requestCustomerOrderRefund(901, {
+    reasonType: "product_damaged",
+    reason: "Hộp bị móp",
+    evidence: [evidence],
+  });
+  expect(client.post).toHaveBeenCalledOnce();
+  const [url, form] = client.post.mock.calls[0]!;
+  expect(url).toBe("/customer/orders/901/refund");
+  expect(form).toBeInstanceOf(FormData);
+  expect((form as FormData).get("reason_type")).toBe("product_damaged");
+  expect((form as FormData).getAll("evidence[]")).toHaveLength(1);
 });
 
 const detailDto = {

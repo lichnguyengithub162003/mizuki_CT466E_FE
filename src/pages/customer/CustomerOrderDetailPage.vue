@@ -29,7 +29,7 @@ import CustomerOrderStatusBadge from "@/components/orders/CustomerOrderStatusBad
 import ProductSuggestions from "@/components/products/ProductSuggestions.vue";
 import { useToast } from "@/components/common/toast";
 import { ROUTE_NAMES } from "@/constants/routes";
-import { useCustomerOrderQuery } from "@/queries/orders";
+import { useCustomerOrderQuery, useRequestOrderRefundMutation } from "@/queries/orders";
 import { useAddCartItemMutation, useCustomerCartQuery } from "@/queries/cart";
 import { useProductRecommendationsInfiniteQuery } from "@/queries/productListing";
 import {
@@ -72,9 +72,33 @@ const moneyOpen = ref(false);
 const metaOpen = ref(false);
 const productsOpen = ref(false);
 const refundDetailOpen = ref(false);
+const refundFormOpen = ref(false);
+const refundReasonType = ref("product_damaged");
+const refundReason = ref("");
+const refundEvidence = ref<File[]>([]);
+const refundEvidenceError = ref("");
 const copiedValue = ref<string | null>(null);
 let copyResetTimer: number | null = null;
 const { toast } = useToast();
+const refundMutation = useRequestOrderRefundMutation(parsedOrderId);
+function selectRefundEvidence(event: Event): void {
+  const files = Array.from((event.target as HTMLInputElement).files ?? []);
+  refundEvidenceError.value = "";
+  if (files.length > 5) refundEvidenceError.value = "Chỉ được tải lên tối đa 5 file.";
+  const invalid = files.find((file) => !["image/jpeg", "image/png", "video/mp4"].includes(file.type) || file.size > 8 * 1024 * 1024);
+  if (invalid) refundEvidenceError.value = "Chỉ hỗ trợ JPG, PNG hoặc MP4; mỗi file tối đa 8 MB.";
+  refundEvidence.value = refundEvidenceError.value ? [] : files;
+}
+async function submitRefund(): Promise<void> {
+  if (!parsedOrderId.value || refundEvidence.value.length === 0) return;
+  try {
+    await refundMutation.mutateAsync({ reasonType: refundReasonType.value, reason: refundReason.value, evidence: refundEvidence.value });
+    refundFormOpen.value = false;
+    toast({ title: "Đã gửi yêu cầu trả hàng / hoàn tiền" });
+  } catch {
+    toast({ title: "Không thể gửi yêu cầu", description: "Vui lòng kiểm tra thông tin và thử lại.", variant: "error" });
+  }
+}
 const currency = new Intl.NumberFormat("vi-VN", {
   style: "currency",
   currency: "VND",
@@ -1347,9 +1371,11 @@ onBeforeUnmount(() => {
                   />Bạn cần hỗ trợ?
                 </h2>
                 <div class="mt-4 grid gap-2">
-                  <div
+                  <button
                     v-if="order.availableActions?.canRequestRefund"
-                    class="flex min-h-11 items-center gap-3 rounded-xl bg-[#f7f8f7] px-3 text-body-sm font-medium text-text-secondary"
+                    type="button"
+                    class="flex min-h-11 w-full items-center gap-3 rounded-xl bg-[#f7f8f7] px-3 text-left text-body-sm font-medium text-text-secondary hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    @click="refundFormOpen = !refundFormOpen"
                   >
                     <Undo2
                       class="size-4 text-[#3e956d]"
@@ -1359,7 +1385,15 @@ onBeforeUnmount(() => {
                       class="ml-auto text-caption"
                       >Xem trước</span
                     >
-                  </div>
+                  </button>
+                  <form v-if="refundFormOpen && order.availableActions?.canRequestRefund" class="grid gap-3 rounded-xl border border-border bg-white p-4" @submit.prevent="submitRefund">
+                    <p class="font-semibold text-primary-950">Yêu cầu trả hàng / hoàn tiền</p>
+                    <p class="text-caption text-text-secondary">Áp dụng cho toàn bộ đơn theo contract hiện tại. Mizuki sẽ duyệt trước khi chi trả.</p>
+                    <label class="grid gap-1 text-body-sm font-medium">Lý do<select v-model="refundReasonType" class="h-11 rounded-xl border border-border bg-white pl-3 pr-10 focus-visible:outline-2 focus-visible:outline-ring"><option value="changed_mind">Thay đổi nhu cầu</option><option value="ordered_wrong_item">Đặt nhầm sản phẩm</option><option value="shipping_delay">Giao hàng chậm</option><option value="product_damaged">Sản phẩm bị hư hỏng</option><option value="wrong_product">Giao sai sản phẩm</option><option value="product_quality">Chất lượng không đạt yêu cầu</option><option value="other">Lý do khác</option></select></label>
+                    <label class="grid gap-1 text-body-sm font-medium">Mô tả<textarea v-model="refundReason" rows="3" maxlength="2000" class="rounded-xl border border-border p-3 focus-visible:outline-2 focus-visible:outline-ring" :required="refundReasonType === 'other'"/></label>
+                    <label class="grid gap-1 text-body-sm font-medium"><span class="flex items-center gap-2">Bằng chứng (1–5 file)<span class="grid size-5 place-items-center rounded-full border border-primary-500 text-caption text-primary-700" title="Ảnh sản phẩm lỗi, video mở hộp, ảnh vận đơn, tem hoặc hiện trạng sản phẩm">i</span></span><input type="file" accept="image/jpeg,image/png,video/mp4" multiple required class="rounded-xl border border-border p-2" @change="selectRefundEvidence"><span class="text-caption font-normal text-text-secondary">JPG, PNG hoặc MP4; tối đa 8 MB/file. Nên tải ảnh sản phẩm lỗi, video mở hộp, ảnh vận đơn, tem hoặc hiện trạng sản phẩm.</span><span v-if="refundEvidence.length" class="text-caption font-normal text-primary-700">Đã chọn {{ refundEvidence.length }} file.</span><span v-if="refundEvidenceError" role="alert" class="text-caption font-normal text-red-600">{{ refundEvidenceError }}</span></label>
+                    <button type="submit" :disabled="refundEvidence.length === 0 || refundMutation.isPending.value" class="min-h-11 rounded-xl bg-primary px-4 font-semibold text-white disabled:opacity-50">{{ refundMutation.isPending.value ? 'Đang gửi…' : 'Gửi yêu cầu' }}</button>
+                  </form>
                   <div
                     class="flex min-h-11 items-center gap-3 rounded-xl px-3 text-body-sm text-text-secondary"
                   >

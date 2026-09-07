@@ -9,6 +9,8 @@ import {
   createCustomerOrder,
   getCustomerOrder,
   getCustomerOrders,
+  requestCustomerOrderRefund,
+  type RequestOrderRefundPayload,
 } from "@/api/orderApi";
 import type {
   CreateCustomerOrderRequest,
@@ -64,6 +66,19 @@ export function useCreateCustomerOrderMutation() {
   return useMutation({
     mutationFn: ({ payload, idempotencyKey }: CreateCustomerOrderVariables) =>
       createCustomerOrder(payload, idempotencyKey),
+    retry: false,
+  });
+}
+
+export function useRequestOrderRefundMutation(orderId: MaybeRefOrGetter<number | null>) {
+  const normalizedOrderId = computed(() => toValue(orderId));
+  return useMutation({
+    mutationFn: (payload: RequestOrderRefundPayload) =>
+      requestCustomerOrderRefund(normalizedOrderId.value!, payload),
+    onSuccess: async () => {
+      await orderQueryClient.invalidateQueries({ queryKey: ["customer-order", normalizedOrderId.value] });
+      await orderQueryClient.invalidateQueries({ queryKey: ["customer-orders"] });
+    },
     retry: false,
   });
 }

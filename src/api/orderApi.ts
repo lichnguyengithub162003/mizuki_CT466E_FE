@@ -1,4 +1,5 @@
 import { apiClient } from "@/api/clients";
+import { ensureCsrfCookie } from "@/api/csrf";
 import { resolveProductImage } from "@/api/productListingAdapter";
 import { ENDPOINTS } from "@/constants/endpoints";
 import type {
@@ -226,6 +227,24 @@ export async function getCustomerOrder(
     ENDPOINTS.customerOrder(orderId),
   );
   return adaptCustomerOrder(response.data.data);
+}
+
+export interface RequestOrderRefundPayload {
+  reasonType: string;
+  reason?: string;
+  evidence: File[];
+}
+
+export async function requestCustomerOrderRefund(
+  orderId: number,
+  payload: RequestOrderRefundPayload,
+): Promise<void> {
+  const form = new FormData();
+  form.append("reason_type", payload.reasonType);
+  if (payload.reason?.trim()) form.append("reason", payload.reason.trim());
+  payload.evidence.forEach((file) => form.append("evidence[]", file));
+  await ensureCsrfCookie();
+  await apiClient.post(ENDPOINTS.customerOrderRefund(orderId), form);
 }
 
 export async function getCustomerOrders(
