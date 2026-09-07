@@ -6,6 +6,7 @@ export interface AuthenticatedUser {
   readonly email: string
   readonly phone: string | null
   readonly avatar: string | null
+  readonly avatar_rendition_url?: string | null
   readonly role: AppRole
   readonly role_label: string
   readonly branch_id: number | null

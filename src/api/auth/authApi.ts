@@ -23,25 +23,38 @@ async function postWithCsrf<TResponse, TPayload>(
   return response.data
 }
 
+function adaptAuthenticatedUser(user: AuthenticatedUser): AuthenticatedUser {
+  return {
+    ...user,
+    avatar: user.avatar_rendition_url ?? user.avatar,
+  }
+}
+
 export async function initializeAuthCsrf(): Promise<void> {
   await ensureCsrfCookie()
 }
 
 export async function login(payload: LoginPayload): Promise<AuthenticatedUser> {
-  return (await postWithCsrf<AuthenticatedUser, LoginPayload>(ENDPOINTS.authLogin, payload)).data
+  return adaptAuthenticatedUser(
+    (await postWithCsrf<AuthenticatedUser, LoginPayload>(ENDPOINTS.authLogin, payload)).data,
+  )
 }
 
 export async function staffLogin(payload: LoginPayload): Promise<AuthenticatedUser> {
-  return (await postWithCsrf<AuthenticatedUser, LoginPayload>(ENDPOINTS.authStaffLogin, payload)).data
+  return adaptAuthenticatedUser(
+    (await postWithCsrf<AuthenticatedUser, LoginPayload>(ENDPOINTS.authStaffLogin, payload)).data,
+  )
 }
 
 export async function register(payload: RegisterPayload): Promise<AuthenticatedUser> {
-  return (await postWithCsrf<AuthenticatedUser, RegisterPayload>(ENDPOINTS.authRegister, payload)).data
+  return adaptAuthenticatedUser(
+    (await postWithCsrf<AuthenticatedUser, RegisterPayload>(ENDPOINTS.authRegister, payload)).data,
+  )
 }
 
 export async function getCurrentUser(): Promise<AuthenticatedUser> {
   const response = await apiClient.get<ApiResponse<AuthenticatedUser>>(ENDPOINTS.authMe)
-  return response.data.data
+  return adaptAuthenticatedUser(response.data.data)
 }
 
 export async function logout(): Promise<void> {

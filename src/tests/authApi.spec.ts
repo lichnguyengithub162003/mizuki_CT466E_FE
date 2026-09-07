@@ -86,6 +86,16 @@ describe('auth API contract', () => {
     expect(apiMocks.ensureCsrfCookie).not.toHaveBeenCalled()
   })
 
+  it('prefers the avatar rendition and preserves the legacy fallback', async () => {
+    const rendition = 'https://res.cloudinary.com/mizuki/avatar.jpg'
+    apiMocks.get
+      .mockResolvedValueOnce({ data: { data: { ...user, avatar: '/legacy/avatar.jpg', avatar_rendition_url: rendition } } })
+      .mockResolvedValueOnce({ data: { data: { ...user, avatar: '/legacy/avatar.jpg' } } })
+
+    await expect(getCurrentUser()).resolves.toMatchObject({ avatar: rendition })
+    await expect(getCurrentUser()).resolves.toMatchObject({ avatar: '/legacy/avatar.jpg' })
+  })
+
   it('requests the backend-owned Google redirect URL with an optional safe destination', async () => {
     const redirectUrl = 'https://accounts.google.com/o/oauth2/auth?state=opaque'
     apiMocks.get.mockResolvedValue({ data: { data: { redirect_url: redirectUrl } } })
