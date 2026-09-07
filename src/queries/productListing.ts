@@ -1,5 +1,5 @@
 import { computed, toValue, type MaybeRefOrGetter } from "vue";
-import { keepPreviousData, QueryClient, useQuery } from "@tanstack/vue-query";
+import { keepPreviousData, QueryClient, useInfiniteQuery, useQuery } from "@tanstack/vue-query";
 import {
   getProductBrands,
   getProductCategories,
@@ -40,6 +40,25 @@ export function useProductListingQuery(
       queryFn: async () =>
         adaptProductListing(await getProductListing(normalizedRequest.value)),
       placeholderData: keepPreviousData,
+      enabled: computed(() => toValue(enabled)),
+    },
+    productListingQueryClient,
+  );
+}
+
+export function useProductRecommendationsInfiniteQuery(
+  request: MaybeRefOrGetter<Omit<ProductListingRequest, 'page'>>,
+  enabled: MaybeRefOrGetter<boolean> = true,
+) {
+  const normalizedRequest = computed(() => toValue(request));
+  return useInfiniteQuery(
+    {
+      queryKey: computed(() => ['product-recommendations', normalizedRequest.value]),
+      queryFn: async ({ pageParam }) => adaptProductListing(await getProductListing({ ...normalizedRequest.value, page: pageParam })),
+      initialPageParam: 1,
+      getNextPageParam: (lastPage) => lastPage.pagination.currentPage < lastPage.pagination.lastPage
+        ? lastPage.pagination.currentPage + 1
+        : undefined,
       enabled: computed(() => toValue(enabled)),
     },
     productListingQueryClient,
