@@ -47,7 +47,7 @@ function stockLabel(product: ProductListingProduct): string {
 function productImage(product: ProductListingProduct): string {
   return failedImages.value.has(product.id)
     ? PRODUCT_LISTING_FALLBACK_IMAGE
-    : product.imageUrl ?? PRODUCT_LISTING_FALLBACK_IMAGE
+    : product.thumbnailUrl ?? product.imageUrl ?? PRODUCT_LISTING_FALLBACK_IMAGE
 }
 
 function handleImageError(productId: string): void {

@@ -110,6 +110,7 @@ export interface ProductListingProduct extends HomeProduct {
   readonly categoryId: string;
   readonly brandId: string;
   readonly imageUrl?: string;
+  readonly thumbnailUrl?: string;
   readonly defaultVariantId?: number;
   readonly concernIds?: readonly string[];
   readonly isNew?: boolean;
@@ -131,6 +132,7 @@ export interface ProductDetailImage {
   readonly alt: string;
   readonly tone: "sage" | "mint" | "sand" | "rose" | "sky";
   readonly imageUrl?: string;
+  readonly thumbnailUrl?: string;
 }
 
 export interface ProductDetailVariantOption {

@@ -63,6 +63,23 @@ afterEach(() => {
 })
 
 describe('product listing API and adapter', () => {
+  it('prefers the card rendition and falls back to the legacy product image', () => {
+    const adapted = adaptProductListItem({
+      ...baseProduct,
+      primary_image_card_url: 'https://res.cloudinary.com/mizuki/card.jpg',
+      primary_image_thumb_url: 'https://res.cloudinary.com/mizuki/thumb.jpg',
+      primary_image_url: 'https://res.cloudinary.com/mizuki/original.jpg',
+    })
+    expect(adapted.imageUrl).toBe('https://res.cloudinary.com/mizuki/card.jpg')
+    expect(adapted.thumbnailUrl).toBe('https://res.cloudinary.com/mizuki/thumb.jpg')
+
+    expect(adaptProductListItem({
+      ...baseProduct,
+      primary_image_card_url: null,
+      primary_image_url: 'https://res.cloudinary.com/mizuki/original.jpg',
+    }).imageUrl).toBe('https://res.cloudinary.com/mizuki/original.jpg')
+  })
+
   it('requests only GET /products with supported listing parameters', async () => {
     const response: ProductListingResponseDto = {
       success: true,
@@ -95,13 +112,13 @@ describe('product listing API and adapter', () => {
 
   it('loads category, brand, and autocomplete contracts from their confirmed endpoints', async () => {
     apiGetMock
-      .mockResolvedValueOnce({ data: { data: [{ id: 6, parent_id: null, name: 'Da mặt', slug: 'da-mat', children: [] }] } })
-      .mockResolvedValueOnce({ data: { data: [{ id: 45, name: 'Cocoon', slug: 'cocoon', logo: null, banner_image: null, description: null }] } })
-      .mockResolvedValueOnce({ data: { data: [{ id: 1, name: 'Cocoon Bí Đao', slug: 'cocoon-bi-dao', primary_image_url: '/storage/cocoon.jpg', minimum_price: 180_000 }] } })
+      .mockResolvedValueOnce({ data: { data: [{ id: 6, parent_id: null, name: 'Da mặt', slug: 'da-mat', image: '/legacy/category.jpg', image_rendition_url: 'https://res.cloudinary.com/mizuki/category.jpg', children: [] }] } })
+      .mockResolvedValueOnce({ data: { data: [{ id: 45, name: 'Cocoon', slug: 'cocoon', logo: '/legacy/logo.jpg', logo_rendition_url: 'https://res.cloudinary.com/mizuki/logo.jpg', banner_image: '/legacy/banner.jpg', banner_rendition_url: 'https://res.cloudinary.com/mizuki/banner.jpg', description: null }] } })
+      .mockResolvedValueOnce({ data: { data: [{ id: 1, name: 'Cocoon Bí Đao', slug: 'cocoon-bi-dao', primary_image_url: '/storage/cocoon.jpg', primary_image_thumb_url: 'https://res.cloudinary.com/mizuki/thumb.jpg', minimum_price: 180_000 }] } })
 
-    await expect(getProductCategories()).resolves.toHaveLength(1)
-    await expect(getProductBrands()).resolves.toHaveLength(1)
-    await expect(searchProducts('Cocoon')).resolves.toHaveLength(1)
+    await expect(getProductCategories()).resolves.toMatchObject([{ image: 'https://res.cloudinary.com/mizuki/category.jpg' }])
+    await expect(getProductBrands()).resolves.toMatchObject([{ logo: 'https://res.cloudinary.com/mizuki/logo.jpg', banner_image: 'https://res.cloudinary.com/mizuki/banner.jpg' }])
+    await expect(searchProducts('Cocoon')).resolves.toMatchObject([{ primary_image_url: 'https://res.cloudinary.com/mizuki/thumb.jpg' }])
 
     expect(apiGetMock.mock.calls).toEqual([
       ['/categories'],
@@ -189,6 +206,22 @@ describe('product listing API and adapter', () => {
     expect(source).not.toMatch(/\bany\b/)
     expect(source).not.toContain('productListingDemoData')
   })
+
+  it('does not construct Cloudinary transformations in frontend production code', () => {
+    const source = [
+      'src/api/productListingApi.ts',
+      'src/api/productListingAdapter.ts',
+      'src/api/auth/authApi.ts',
+      'src/components/products/ProductDetailGallery.vue',
+      'src/components/products/ProductSuggestions.vue',
+      'src/components/customer-shell/CustomerCategoryMenu.vue',
+    ].map((path) => readFileSync(path, 'utf8')).join('\n')
+
+    expect(source).not.toMatch(/res\.cloudinary\.com/)
+    expect(source).not.toMatch(/\/upload\/(?:[^/]*,)?(?:w_|h_|c_|q_|f_)/)
+    expect(source).toContain('product.thumbnailUrl ?? product.imageUrl')
+    expect(source).toContain('resolveCatalogAsset(categoryImage)')
+  })
 })
 
 function createSearchRouter() {
@@ -206,6 +239,7 @@ const searchResult = {
   name: 'Bộ Chăm Sóc Tóc Cocoon',
   slug: 'bo-cham-soc-toc-cocoon-114573',
   primary_image_url: '/storage/catalog/products/114573/product.png',
+  primary_image_thumb_url: 'https://res.cloudinary.com/mizuki/search-thumb.jpg',
   minimum_price: 616_000,
 }
 
@@ -225,6 +259,9 @@ describe('customer header search', () => {
     expect(apiGetMock).toHaveBeenCalledWith('/products/search', { params: { keyword: 'Cocoon' } })
     expect(apiGetMock).not.toHaveBeenCalledWith('/products', expect.anything())
     expect(wrapper.get('[role="option"]').text()).toContain('Bộ Chăm Sóc Tóc Cocoon')
+    expect(wrapper.get('[role="option"] img').attributes('src')).toBe(
+      'https://res.cloudinary.com/mizuki/search-thumb.jpg',
+    )
 
     await wrapper.get('[role="option"]').trigger('click')
     await flushPromises()

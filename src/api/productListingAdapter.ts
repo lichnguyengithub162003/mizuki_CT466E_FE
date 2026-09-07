@@ -25,6 +25,8 @@ export interface ProductListingResult {
 interface ProductDetailImageSourceDto {
   readonly id: number | string;
   readonly image_url: string;
+  readonly thumb_url?: string | null;
+  readonly detail_url?: string | null;
   readonly alt_text?: string | null;
   readonly sort_order?: number;
 }
@@ -70,6 +72,7 @@ export interface ProductDetailBrandSourceDto {
   readonly name?: string | null;
   readonly slug?: string | null;
   readonly logo_url?: string | null;
+  readonly logo_rendition_url?: string | null;
   readonly active_product_count?: number | string | null;
   readonly average_rating?: number | string | null;
   readonly review_count?: number | string | null;
@@ -230,7 +233,14 @@ export function adaptProductListItem(
     categoryId: String(product.category.id),
     tone: "mint",
     imageUrl: resolveProductImage(
-      product.primary_image_url ?? product.primary_image,
+      product.primary_image_card_url
+        ?? product.primary_image_url
+        ?? product.primary_image,
+    ),
+    thumbnailUrl: resolveProductImage(
+      product.primary_image_thumb_url
+        ?? product.primary_image_url
+        ?? product.primary_image,
     ),
     defaultVariantId: product.default_variant?.id,
     price,
@@ -366,7 +376,8 @@ export function adaptProductDetail(
     label: `Ảnh ${index + 1}`,
     alt: image.alt_text?.trim() || detail.name,
     tone: (["sage", "mint", "sand", "rose", "sky"] as const)[index % 5],
-    imageUrl: resolveProductImage(image.image_url),
+    imageUrl: resolveProductImage(image.detail_url ?? image.image_url),
+    thumbnailUrl: resolveProductImage(image.thumb_url ?? image.image_url),
   }));
 
   const variantPrices = variants
@@ -400,7 +411,9 @@ export function adaptProductDetail(
       id: finiteNumber(brand?.id) ?? undefined,
       name: brand?.name?.trim() || "Thương hiệu chưa cập nhật",
       slug: brand?.slug?.trim() || undefined,
-      logoUrl: resolveCatalogAsset(brand?.logo_url),
+      logoUrl: resolveCatalogAsset(
+        brand?.logo_rendition_url ?? brand?.logo_url,
+      ),
       initials: (brand?.name?.trim() || "?")
         .split(/\s+/)
         .slice(0, 2)

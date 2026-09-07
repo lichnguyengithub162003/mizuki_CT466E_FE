@@ -46,16 +46,23 @@ const commitments = [
   },
 ] as const;
 
-function imageSource(image: ProductDetailImage): string | undefined {
-  if (!image.imageUrl) return undefined;
-  return failedImages.value.has(image.id)
-    ? PRODUCT_LISTING_FALLBACK_IMAGE
+function imageSource(
+  image: ProductDetailImage,
+  kind: "main" | "thumbnail",
+): string | undefined {
+  const source = kind === "thumbnail"
+    ? image.thumbnailUrl ?? image.imageUrl
     : image.imageUrl;
+  if (!source) return undefined;
+  return failedImages.value.has(`${kind}:${image.id}`)
+    ? PRODUCT_LISTING_FALLBACK_IMAGE
+    : source;
 }
 
-function markImageFailed(imageId: string): void {
-  if (failedImages.value.has(imageId)) return;
-  failedImages.value = new Set([...failedImages.value, imageId]);
+function markImageFailed(imageId: string, kind: "main" | "thumbnail"): void {
+  const failureKey = `${kind}:${imageId}`;
+  if (failedImages.value.has(failureKey)) return;
+  failedImages.value = new Set([...failedImages.value, failureKey]);
 }
 
 watch(
@@ -84,14 +91,14 @@ watch(
         data-gallery-frame
       >
         <img
-          v-if="imageSource(selectedImage)"
-          :src="imageSource(selectedImage)"
+          v-if="imageSource(selectedImage, 'main')"
+          :src="imageSource(selectedImage, 'main')"
           :alt="selectedImage.alt"
           class="absolute inset-0 size-full object-contain p-2 sm:p-2.5"
           width="720"
           height="720"
           data-detail-main-image
-          @error="markImageFailed(selectedImage.id)"
+          @error="markImageFailed(selectedImage.id, 'main')"
         />
         <div
           v-else
@@ -125,13 +132,13 @@ watch(
           @click="selectedImageId = image.id"
         >
           <img
-            v-if="imageSource(image)"
-            :src="imageSource(image)"
+            v-if="imageSource(image, 'thumbnail')"
+            :src="imageSource(image, 'thumbnail')"
             :alt="image.alt"
             class="absolute inset-0 size-full rounded-xl object-contain p-1"
             width="96"
             height="96"
-            @error="markImageFailed(image.id)"
+            @error="markImageFailed(image.id, 'thumbnail')"
           />
           <Image v-else class="size-5 sm:size-6" aria-hidden="true" />
         </button>

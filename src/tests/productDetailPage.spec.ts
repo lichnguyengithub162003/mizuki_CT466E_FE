@@ -223,6 +223,21 @@ describe('customer product detail page', () => {
     expect(wrapper.get('[data-detail-main-image]').attributes('src')).toBe(secondUrl)
   })
 
+  it('prefers detail and thumbnail renditions with independent gallery sources', async () => {
+    const renditionSlug = 'runtime-product-with-renditions'
+    const originalUrl = 'https://res.cloudinary.com/mizuki/original.jpg'
+    const detailUrl = 'https://res.cloudinary.com/mizuki/detail.jpg'
+    const thumbUrl = 'https://res.cloudinary.com/mizuki/thumb.jpg'
+    mocks.getProductDetail.mockResolvedValueOnce(detailResponse({ slug: renditionSlug }, {
+      images: [{ id: 1, image_url: originalUrl, detail_url: detailUrl, thumb_url: thumbUrl, alt_text: 'Rendition', sort_order: 0 }],
+      gallery: [],
+    }))
+
+    const { wrapper } = await mountDetail(`/products/${renditionSlug}`)
+    expect(wrapper.get('[data-detail-main-image]').attributes('src')).toBe(detailUrl)
+    expect(wrapper.get('[data-thumbnail-id] img').attributes('src')).toBe(thumbUrl)
+  })
+
   it('uses the real backend brand ID in the listing link', async () => {
     const { wrapper } = await mountDetail()
     const href = wrapper.get('[data-brand-products-link]').attributes('href')
