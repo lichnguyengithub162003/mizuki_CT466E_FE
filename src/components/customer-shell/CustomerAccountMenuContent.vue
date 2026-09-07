@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LogIn, LogOut, MapPin, Package, Settings, UserPlus, UserRound, WalletCards } from '@lucide/vue'
+import { CalendarDays, LogIn, LogOut, MapPin, Package, Settings, UserPlus, UserRound, WalletCards } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import { ROUTE_PATHS } from '@/constants/routes'
 import { useAuthStore } from '@/stores/auth'
@@ -20,7 +20,6 @@ const authStore = useAuthStore(pinia)
 const pendingItems = [
   { label: 'Tài khoản của tôi', icon: UserRound },
   { label: 'Địa chỉ nhận hàng', icon: MapPin },
-  { label: 'Đơn hàng của tôi', icon: Package },
 ] as const
 </script>
 
@@ -41,10 +40,18 @@ const pendingItems = [
       </div>
 
       <div class="grid gap-1" aria-label="Tiện ích tài khoản">
-        <a :href="ROUTE_PATHS.wallet" class="motion-interactive flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-body-sm text-foreground no-underline hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" @click="emit('close')">
+        <RouterLink :to="ROUTE_PATHS.wallet" class="motion-interactive flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-body-sm text-foreground no-underline hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" @click="emit('close')">
           <WalletCards class="size-4 shrink-0" aria-hidden="true" />
           Ví Mizuki
-        </a>
+        </RouterLink>
+        <RouterLink :to="ROUTE_PATHS.customerOrders" class="motion-interactive flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-body-sm text-foreground no-underline hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" @click="emit('close')">
+          <Package class="size-4 shrink-0" aria-hidden="true" />
+          Đơn hàng của tôi
+        </RouterLink>
+        <RouterLink :to="ROUTE_PATHS.customerAppointments" class="motion-interactive flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-body-sm text-foreground no-underline hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" @click="emit('close')">
+          <CalendarDays class="size-4 shrink-0" aria-hidden="true" />
+          Lịch hẹn của tôi
+        </RouterLink>
         <button
           v-for="item in pendingItems"
           :key="item.label"

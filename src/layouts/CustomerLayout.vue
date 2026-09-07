@@ -74,7 +74,7 @@ const activeKey = computed<CustomerNavigationKey>(() => {
     return 'products'
   }
 
-  if (route.name === ROUTE_NAMES.skinCare) {
+  if (route.name === ROUTE_NAMES.skinCare || route.name === ROUTE_NAMES.skinCareBooking) {
     return 'services'
   }
 
@@ -86,7 +86,13 @@ const activeKey = computed<CustomerNavigationKey>(() => {
     return 'cart'
   }
 
-  if (route.name === ROUTE_NAMES.customerOrders || route.name === ROUTE_NAMES.customerOrderDetail || route.name === ROUTE_NAMES.customerOrderPreviewDetail) {
+  if (
+    route.name === ROUTE_NAMES.customerOrders
+    || route.name === ROUTE_NAMES.customerOrderDetail
+    || route.name === ROUTE_NAMES.customerOrderPreviewDetail
+    || route.name === ROUTE_NAMES.customerAppointments
+    || route.name === ROUTE_NAMES.customerAppointmentDetail
+  ) {
     return 'account'
   }
 

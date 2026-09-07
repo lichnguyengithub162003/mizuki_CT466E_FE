@@ -19,6 +19,9 @@ export const ROUTE_NAMES = {
   voucherCenter: 'voucher-center',
   wallet: 'wallet',
   skinCare: 'skin-care',
+  skinCareBooking: 'skin-care-booking',
+  customerAppointments: 'customer-appointments',
+  customerAppointmentDetail: 'customer-appointment-detail',
   forbidden: 'forbidden',
   notFound: 'not-found',
 } as const
@@ -44,6 +47,9 @@ export const ROUTE_PATHS = {
   voucherCenter: '/vouchers',
   wallet: '/wallet',
   skinCare: '/skin-care',
+  skinCareBooking: '/skin-care/booking',
+  customerAppointments: '/appointments',
+  customerAppointmentDetail: '/appointments/:id',
   forbidden: '/forbidden',
   notFoundExample: '/khong-ton-tai',
 } as const

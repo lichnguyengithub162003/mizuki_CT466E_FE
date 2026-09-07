@@ -34,6 +34,10 @@ export interface ClinicService {
   readonly capacity: number
 }
 
+export interface ClinicCatalogService extends ClinicService {
+  readonly branch_ids: readonly number[]
+}
+
 export interface ClinicSlot {
   readonly start_at: string
   readonly end_at: string
@@ -52,3 +56,75 @@ export interface ClinicSlotsData {
 export type ClinicListResponse = ApiResponse<readonly ClinicBranch[]>
 export type ClinicServiceListResponse = ApiResponse<readonly ClinicService[]>
 export type ClinicSlotsResponse = ApiResponse<ClinicSlotsData>
+
+export type CustomerAppointmentStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show'
+
+export interface CustomerAppointmentReview {
+  readonly id: number
+  readonly rating: number
+  readonly title: string | null
+  readonly comment: string | null
+  readonly is_visible: boolean
+  readonly reviewed_at: string | null
+  readonly updated_at: string | null
+}
+
+export interface CustomerAppointment {
+  readonly id: number
+  readonly appointment_number: string
+  readonly status: CustomerAppointmentStatus
+  readonly status_label: string
+  readonly branch: Pick<ClinicBranch, 'id' | 'name' | 'code' | 'branch_type'>
+  readonly service: {
+    readonly id: number
+    readonly name: string
+    readonly slug: string
+    readonly price: number
+    readonly duration_minutes: number
+  }
+  readonly technician: { readonly id: number; readonly name: string } | null
+  readonly starts_at: string
+  readonly ends_at: string
+  readonly customer_note: string | null
+  readonly staff_note: string | null
+  readonly can_review: boolean
+  readonly review: CustomerAppointmentReview | null
+  readonly cancelled_at: string | null
+  readonly completed_at: string | null
+  readonly created_at: string | null
+  readonly updated_at: string | null
+}
+
+export interface CreateCustomerAppointmentRequest {
+  readonly branch_id: number
+  readonly service_id: number
+  readonly appointment_date: string
+  readonly start_time: string
+  readonly customer_note?: string | null
+}
+
+export interface AppointmentPagination {
+  readonly current_page: number
+  readonly per_page: number
+  readonly total: number
+  readonly last_page: number
+}
+
+export interface CustomerAppointmentPage {
+  readonly appointments: readonly CustomerAppointment[]
+  readonly pagination: AppointmentPagination
+}
+
+export type CustomerAppointmentResponse = ApiResponse<CustomerAppointment>
+export interface CustomerAppointmentListResponse {
+  readonly success?: boolean
+  readonly data: readonly CustomerAppointment[]
+  readonly message?: string
+  readonly meta: { readonly pagination: AppointmentPagination }
+}

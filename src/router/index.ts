@@ -165,6 +165,24 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer' },
   },
   {
+    path: ROUTE_PATHS.skinCareBooking,
+    name: ROUTE_NAMES.skinCareBooking,
+    component: () => import('@/pages/clinic/SkinCareBookingPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
+    path: ROUTE_PATHS.customerAppointments,
+    name: ROUTE_NAMES.customerAppointments,
+    component: () => import('@/pages/customer/CustomerAppointmentsPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
+    path: ROUTE_PATHS.customerAppointmentDetail,
+    name: ROUTE_NAMES.customerAppointmentDetail,
+    component: () => import('@/pages/customer/CustomerAppointmentDetailPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
     path: ROUTE_PATHS.voucherCenter,
     name: ROUTE_NAMES.voucherCenter,
     component: () => import('@/pages/customer/VoucherCenterPage.vue'),
