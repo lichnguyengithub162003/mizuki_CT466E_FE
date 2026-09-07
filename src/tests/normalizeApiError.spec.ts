@@ -52,6 +52,11 @@ describe('normalizeApiError', () => {
     expect(error).toMatchObject({ kind: 'http', status: 429, retryAfter: 60 })
   })
 
+  it('localizes common default Laravel validation messages', () => {
+    const error = normalizeApiError({ isAxiosError: true, response: { status: 422, data: { errors: { name: ['The name field is required.'], category_id: ['The selected category id is invalid.'] } } } })
+    expect(error.validationErrors).toEqual({ name: ['Trường này là bắt buộc.'], category_id: ['Giá trị đã chọn không hợp lệ.'] })
+  })
+
   it.each([
     [401, 'unauthorized'],
     [403, 'forbidden'],

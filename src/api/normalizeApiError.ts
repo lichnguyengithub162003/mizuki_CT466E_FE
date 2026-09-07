@@ -41,15 +41,22 @@ function readValidationErrors(data: unknown): ApiValidationErrors | undefined {
   if (!errorContainer) return undefined
 
   const validationErrors: Record<string, readonly string[]> = {}
+  const localize = (message: string): string => {
+    if (/^The .+ field is required\.?$/i.test(message)) return 'Trường này là bắt buộc.'
+    if (/^The selected .+ is invalid\.?$/i.test(message)) return 'Giá trị đã chọn không hợp lệ.'
+    if (/^The .+ must be (a|an) /i.test(message)) return 'Giá trị nhập chưa đúng định dạng.'
+    if (/^The .+ has already been taken\.?$/i.test(message)) return 'Giá trị này đã được sử dụng.'
+    return message
+  }
 
   for (const [field, messages] of Object.entries(errorContainer)) {
     if (typeof messages === 'string') {
-      validationErrors[field] = [messages]
+      validationErrors[field] = [localize(messages)]
       continue
     }
 
     if (Array.isArray(messages) && messages.every((message) => typeof message === 'string')) {
-      validationErrors[field] = messages
+      validationErrors[field] = messages.map(localize)
     }
   }
 
