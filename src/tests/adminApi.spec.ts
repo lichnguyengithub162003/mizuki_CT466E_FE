@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), request: vi.fn(),
 vi.mock('@/api/clients', () => ({ apiClient: { get: mocks.get, post: mocks.post, request: mocks.request } }))
 vi.mock('@/api/csrf', () => ({ ensureCsrfCookie: mocks.csrf }))
 
-import { adjustInventory, createAdminRecord, deleteAdminCatalog, getAdminDetail, getAdminList, getAdminOrderCounts, runAppointmentAction, runOrderAction, runRefundAction, updateAdminRecord, uploadAdminImage } from '@/api/adminApi'
+import { adjustInventory, createAdminRecord, deleteAdminCatalog, getAdminDetail, getAdminList, getAdminOrderCounts, getAdminRefundCounts, runAppointmentAction, runOrderAction, runRefundAction, updateAdminRecord, uploadAdminImage } from '@/api/adminApi'
 
 describe('admin API contracts', () => {
   beforeEach(() => {
@@ -32,6 +32,12 @@ describe('admin API contracts', () => {
     expect(mocks.get).toHaveBeenCalledWith('/admin/orders/counts')
   })
 
+  it('loads the authoritative refund work-queue counts', async () => {
+    mocks.get.mockResolvedValue({ data: { data: { requested: 4, approved_pending_payout: 2, pending_action: 6 } } })
+    await expect(getAdminRefundCounts()).resolves.toEqual({ requested: 4, approved_pending_payout: 2, pending_action: 6 })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/refunds/counts')
+  })
+
   it('maps catalog search and review visibility to their verified request names', async () => {
     mocks.get.mockResolvedValue({ data: { data: [], meta: { pagination: { current_page: 1, per_page: 15, total: 0, last_page: 1 } } } })
     await getAdminList('products', { keyword: 'serum', category_id: 2 })
@@ -44,6 +50,12 @@ describe('admin API contracts', () => {
     mocks.get.mockResolvedValue({ data: { data: [], meta: { pagination: { current_page: 1, per_page: 15, total: 0, last_page: 1 } } } })
     await getAdminList('orders', { delivery_method: 'delivery', payment_status: 'paid', page: 1 })
     expect(mocks.get).toHaveBeenCalledWith('/admin/orders', { params: { page: 1 } })
+  })
+
+  it('sends the verified refund list search, scope, destination, date and sort contract', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [], meta: { pagination: { current_page: 1, per_page: 40, total: 0, last_page: 1 } } } })
+    await getAdminList('refunds', { keyword: '0908', status: 'approved', branch_id: 2, settlement_method: 'wallet', date_from: '2026-08-01', date_to: '2026-08-31', sort_by: 'requested_amount', sort_direction: 'desc', page: 1, per_page: 40 })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/refunds', { params: { keyword: '0908', status: 'approved', branch_id: 2, settlement_method: 'wallet', date_from: '2026-08-01', date_to: '2026-08-31', sort_by: 'requested_amount', sort_direction: 'desc', page: 1, per_page: 40 } })
   })
 
   it('sends server-side shipment queue filters to the order endpoint', async () => {
