@@ -54,7 +54,7 @@ const buttonVariants = cva(
     :type="props.type"
     :disabled="props.disabled || props.loading"
     :aria-busy="props.loading || undefined"
-    :class="cn(buttonVariants({ variant: props.variant, size: props.size }), props.class)"
+    :class="cn(buttonVariants({ variant: props.variant, size: props.size }), props.variant === 'primary' && 'text-primary-foreground', props.class)"
   >
     <BaseSpinner v-if="props.loading" size="sm" decorative />
     <span v-else-if="$slots.icon" aria-hidden="true"><slot name="icon" /></span>

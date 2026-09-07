@@ -31,6 +31,7 @@ describe('BaseButton', () => {
     })
 
     expect(primary.classes()).toContain('bg-primary')
+    expect(primary.classes()).toContain('text-primary-foreground')
     expect(primary.classes()).toContain('motion-interactive')
     expect(destructive.classes()).toContain('bg-destructive')
     expect(loading.attributes('disabled')).toBeDefined()
