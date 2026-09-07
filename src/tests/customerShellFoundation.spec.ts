@@ -265,7 +265,7 @@ describe("customer shell foundation", () => {
 
     expect(wrapper.text()).toContain("Miễn phí giao hàng");
     expect(wrapper.text().replace(/\s+/g, " ")).toContain("FREESHIP EXTRA");
-    expect(wrapper.text()).toContain("nội dung demo");
+    expect(wrapper.text()).not.toContain("nội dung demo");
     expect(
       wrapper.get(".customer-announcement-offer").text().replace(/\s+/g, " "),
     ).toBe("FREESHIP EXTRA");
@@ -915,6 +915,40 @@ describe("customer shell foundation", () => {
     expect(wrapper.get("main").classes()).toEqual(
       expect.arrayContaining(["pb-24", "md:pb-0"]),
     );
+  });
+
+  it("enables only working customer account routes", async () => {
+    const router = createTestRouter();
+    const authStore = useAuthStore(pinia);
+    authStore.$patch({
+      user: {
+        id: 2,
+        name: "Order Customer",
+        email: "orders@example.com",
+        phone: null,
+        avatar: null,
+        role: "customer",
+        role_label: "Khách hàng",
+        branch_id: null,
+        email_verified_at: null,
+        created_at: "2026-08-26T00:00:00Z",
+      },
+    });
+    const wrapper = mount(CustomerHeader, {
+      attachTo: document.body,
+      props: { selectedBranch: DEFAULT_CUSTOMER_BRANCH, activeKey: "account" },
+      global: { plugins: [pinia, router] },
+    });
+    mountedWrappers.push(wrapper);
+
+    await wrapper.get('button[aria-label="Tài khoản của Order Customer"]').trigger("click");
+    await nextTick();
+    const links = Array.from(document.body.querySelectorAll<HTMLAnchorElement>('a'));
+    expect(links.find((link) => link.textContent?.includes('Đơn hàng của tôi'))?.getAttribute('href')).toBe('/orders');
+    expect(links.find((link) => link.textContent?.includes('Ví Mizuki'))?.getAttribute('href')).toBe('/wallet');
+    const disabled = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button:disabled')).map((button) => button.textContent ?? '');
+    expect(disabled.some((text) => text.includes('Tài khoản của tôi'))).toBe(true);
+    expect(disabled.some((text) => text.includes('Địa chỉ nhận hàng'))).toBe(true);
   });
 
   it("uses distinct server cart lines for both responsive cart badges", async () => {
