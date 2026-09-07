@@ -18,6 +18,7 @@ import {
   getGoogleRedirectUrl,
   initializeAuthCsrf,
   login,
+  staffLogin,
   logout,
   register,
   requestPasswordReset,
@@ -64,6 +65,14 @@ describe('auth API contract', () => {
     expect(apiMocks.ensureCsrfCookie).toHaveBeenCalledOnce()
     expect(apiMocks.post).toHaveBeenCalledWith(ENDPOINTS.authLogin, payload)
     expect(payload).not.toHaveProperty('email')
+  })
+
+  it('uses the exact staff login endpoint with Sanctum CSRF', async () => {
+    const payload = { email: 'manager@mizuki.vn', password: 'password' }
+    apiMocks.post.mockResolvedValue({ data: { data: { ...user, role: 'branch_manager' } } })
+    await staffLogin(payload)
+    expect(apiMocks.ensureCsrfCookie).toHaveBeenCalledOnce()
+    expect(apiMocks.post).toHaveBeenCalledWith('/auth/staff-login', payload)
   })
 
   it('posts registration with the exact required phone payload', async () => {

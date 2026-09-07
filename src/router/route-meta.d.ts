@@ -6,6 +6,7 @@ export type RouteLayout = 'foundation' | 'auth' | 'customer' | 'admin' | 'pos'
 declare module 'vue-router' {
   interface RouteMeta {
     readonly requiresAuth?: boolean
+    readonly requiresAdmin?: boolean
     readonly guestOnly?: boolean
     readonly roles?: readonly AppRole[]
     readonly layout?: RouteLayout
