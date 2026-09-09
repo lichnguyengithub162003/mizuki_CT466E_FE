@@ -23,7 +23,12 @@ const routes: readonly RouteRecordRaw[] = [
     component: () => import('@/layouts/AdminLayout.vue'),
     meta: { layout: 'admin', requiresAdmin: true },
     children: [
-      { path: '', redirect: '/admin/orders' },
+      { path: '', redirect: '/admin/dashboard' },
+      {
+        path: 'dashboard',
+        name: 'admin-dashboard',
+        component: () => import('@/pages/admin/AdminDashboardPage.vue'),
+      },
       {
         path: 'orders',
         name: 'admin-orders',
@@ -237,7 +242,7 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
 
     if (to.name === 'admin-login' && authStore.isAuthenticated) {
       return authStore.isAdmin
-        ? { name: 'admin-orders' }
+        ? { name: 'admin-dashboard' }
         : { name: ROUTE_NAMES.forbidden }
     }
 
