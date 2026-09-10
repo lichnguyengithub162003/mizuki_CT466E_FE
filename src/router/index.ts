@@ -35,6 +35,21 @@ const routes: readonly RouteRecordRaw[] = [
         component: () => import('@/pages/admin/AdminOrdersListPage.vue'),
       },
       { path: 'refunds', name: 'admin-refunds', component: () => import('@/pages/admin/AdminRefundsListPage.vue') },
+      {
+        path: 'branches',
+        name: 'admin-branches',
+        component: () => import('@/pages/admin/AdminBranchesListPage.vue'),
+      },
+      {
+        path: 'branches/create',
+        name: 'admin-branch-create',
+        component: () => import('@/pages/admin/AdminBranchCreatePage.vue'),
+      },
+      {
+        path: 'branches/:id',
+        name: 'admin-branch-detail',
+        component: () => import('@/pages/admin/AdminBranchDetailPage.vue'),
+      },
     ],
   },
   {
