@@ -35,6 +35,7 @@ export type AdminModule =
 export interface AdminListParams {
   keyword?: string;
   search?: string;
+  role?: "super_admin" | "branch_manager" | "cashier" | "technician";
   status?: string;
   payment_status?: string;
   delivery_method?: string;
@@ -82,6 +83,24 @@ export interface AdminListParams {
   discount_type?: string;
   page?: number;
   per_page?: number;
+}
+
+export type AdminStaffRole = NonNullable<AdminListParams["role"]>;
+export type AdminStaffStatus = "working" | "left";
+
+export interface AdminStaffListRecord extends AdminRecord {
+  code: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  avatar: string | null;
+  avatar_rendition_url?: string | null;
+  role: AdminStaffRole;
+  role_label: string;
+  job_title: string | null;
+  branch: { id: number; code: string; name: string } | null;
+  status: AdminStaffStatus;
+  status_label: string;
 }
 
 export interface AdminOrderListRecord extends AdminRecord {

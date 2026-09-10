@@ -57,7 +57,7 @@ function listParams(
     raw.search = raw.keyword;
     delete raw.keyword;
 
-    if (module !== "branches") {
+    if (module !== "branches" && module !== "staff") {
       delete raw.status;
     }
   }

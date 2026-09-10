@@ -50,6 +50,21 @@ const routes: readonly RouteRecordRaw[] = [
         name: 'admin-branch-detail',
         component: () => import('@/pages/admin/AdminBranchDetailPage.vue'),
       },
+      {
+        path: 'staff',
+        name: 'admin-staff',
+        component: () => import('@/pages/admin/AdminStaffListPage.vue'),
+      },
+      {
+        path: 'staff/create',
+        name: 'admin-staff-create',
+        component: () => import('@/pages/admin/AdminStaffCreatePage.vue'),
+      },
+      {
+        path: 'staff/:id',
+        name: 'admin-staff-detail',
+        component: () => import('@/pages/admin/AdminStaffDetailPage.vue'),
+      },
     ],
   },
   {
