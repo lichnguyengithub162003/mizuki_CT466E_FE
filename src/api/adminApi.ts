@@ -9,6 +9,10 @@ import type {
   AdminPage,
   AdminRecord,
   AdminRefundCounts,
+  AdminStaffAssignmentPayload,
+  AdminStaffAssignmentPreflight,
+  AdminStaffDetailRecord,
+  AdminStaffStatus,
 } from "@/types/admin";
 
 const collections: Record<AdminModule, string> = {
@@ -150,6 +154,51 @@ export function updateAdminRecord<T>(
   const endpoint = details[module];
   if (!endpoint) throw new Error(`Module ${module} has no update endpoint`);
   return mutate<T>("patch", endpoint(id), payload);
+}
+
+export function getAdminStaffDetail(id: number | string): Promise<AdminStaffDetailRecord> {
+  return getAdminDetail<AdminStaffDetailRecord>("staff", id);
+}
+
+export function preflightAdminStaffAssignment(
+  id: number | string,
+  payload: AdminStaffAssignmentPayload,
+): Promise<AdminStaffAssignmentPreflight> {
+  return mutate<AdminStaffAssignmentPreflight>(
+    "post",
+    `${ENDPOINTS.adminStaffMember(id)}/assignment/preflight`,
+    payload,
+  );
+}
+
+export function changeAdminStaffAssignment(
+  id: number | string,
+  payload: AdminStaffAssignmentPayload,
+): Promise<AdminStaffDetailRecord> {
+  return mutate<AdminStaffDetailRecord>(
+    "post",
+    `${ENDPOINTS.adminStaffMember(id)}/assignment`,
+    payload,
+  );
+}
+
+export function changeAdminStaffEmploymentStatus(
+  id: number | string,
+  status: AdminStaffStatus,
+): Promise<AdminStaffDetailRecord> {
+  return mutate<AdminStaffDetailRecord>(
+    "patch",
+    `${ENDPOINTS.adminStaffMember(id)}/employment-status`,
+    { status },
+  );
+}
+
+export function trashAdminStaff(id: number | string): Promise<AdminStaffDetailRecord> {
+  return mutate<AdminStaffDetailRecord>("delete", ENDPOINTS.adminStaffMember(id));
+}
+
+export function restoreAdminStaff(id: number | string): Promise<AdminStaffDetailRecord> {
+  return mutate<AdminStaffDetailRecord>("post", `${ENDPOINTS.adminStaffMember(id)}/restore`);
 }
 
 export function deletePromotion(id: number | string): Promise<unknown> {

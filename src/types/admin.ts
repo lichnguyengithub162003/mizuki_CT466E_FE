@@ -35,7 +35,7 @@ export type AdminModule =
 export interface AdminListParams {
   keyword?: string;
   search?: string;
-  role?: "super_admin" | "branch_manager" | "cashier" | "technician";
+  role?: "super_admin" | "branch_manager" | "cashier" | "sales_staff" | "technician";
   status?: string;
   payment_status?: string;
   delivery_method?: string;
@@ -101,6 +101,76 @@ export interface AdminStaffListRecord extends AdminRecord {
   branch: { id: number; code: string; name: string } | null;
   status: AdminStaffStatus;
   status_label: string;
+}
+
+export type AdminStaffWorkArea = "clinic" | "retail" | "management" | "system";
+
+export interface AdminStaffAssignment {
+  id: number;
+  branch: { id: number; code: string; name: string } | null;
+  role: AdminStaffRole;
+  role_label: string;
+  job_title: string | null;
+  work_area: AdminStaffWorkArea | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  reason: string | null;
+}
+
+export interface AdminStaffLifecycleEvent {
+  id: number;
+  type: string;
+  description: string | null;
+  metadata: {
+    before?: Partial<Record<"branch_id" | "role" | "job_title" | "work_area" | "employment_status", unknown>>;
+    after?: Partial<Record<"branch_id" | "role" | "job_title" | "work_area" | "employment_status", unknown>>;
+    from?: unknown;
+    to?: unknown;
+    reason?: string | null;
+    state?: Record<string, unknown>;
+  } | null;
+  occurred_at: string | null;
+  actor: { id: number; name: string } | null;
+}
+
+export interface AdminStaffDetailRecord extends AdminStaffListRecord {
+  current_assignment: AdminStaffAssignment | null;
+  employment_started_at: string | null;
+  employment_ended_at: string | null;
+  permissions: {
+    change_assignment: boolean;
+    change_employment_status: boolean;
+    trash: boolean;
+    restore: boolean;
+  };
+  allowed_actions: Array<"change_assignment" | "change_employment_status" | "trash" | "restore" | string>;
+  history: {
+    assignments: AdminStaffAssignment[];
+    events: AdminStaffLifecycleEvent[];
+  };
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AdminStaffAssignmentPayload {
+  branch_id: number | null;
+  role: AdminStaffRole;
+  job_title: string | null;
+  work_area: AdminStaffWorkArea;
+  effective_from?: string;
+  reason?: string | null;
+}
+
+export interface AdminStaffAssignmentBlocker {
+  type: "appointments" | "pos_sessions" | string;
+  count: number;
+  message: string;
+  action: string;
+}
+
+export interface AdminStaffAssignmentPreflight {
+  can_transfer: boolean;
+  blockers: AdminStaffAssignmentBlocker[];
 }
 
 export interface AdminOrderListRecord extends AdminRecord {
