@@ -42,6 +42,8 @@ export interface ProductListingItemDto {
   brand: ProductListingBrandDto;
   primary_image: string | null;
   primary_image_url: string | null;
+  primary_image_card_url?: string | null;
+  primary_image_thumb_url?: string | null;
   price: number | string | null;
   original_price: number | string | null;
   minimum_price: number | string | null;
@@ -74,6 +76,10 @@ export interface ProductCategoryDto {
   parent_id: number | null;
   name: string;
   slug: string;
+  image_rendition_url?: string | null;
+  image_url?: string | null;
+  image?: string | null;
+  thumbnail?: string | null;
   children: ProductCategoryDto[];
 }
 
@@ -82,7 +88,10 @@ export interface ProductBrandDto {
   name: string;
   slug: string;
   logo: string | null;
+  logo_url?: string | null;
+  logo_rendition_url?: string | null;
   banner_image: string | null;
+  banner_rendition_url?: string | null;
   description: string | null;
 }
 
@@ -91,12 +100,15 @@ export interface ProductSearchItemDto {
   name: string;
   slug: string;
   primary_image_url: string | null;
+  primary_image_thumb_url?: string | null;
   minimum_price: number | string | null;
 }
 
 export interface ProductDetailImageDto {
   id: number;
   image_url: string | null;
+  thumb_url?: string | null;
+  detail_url?: string | null;
   alt_text: string | null;
   sort_order: number;
 }
@@ -274,13 +286,25 @@ export async function getProductCategories(): Promise<ProductCategoryDto[]> {
     await apiClient.get<ApiCollectionResponse<ProductCategoryDto>>(
       "/categories",
     );
-  return response.data.data;
+  const adaptCategory = (category: ProductCategoryDto): ProductCategoryDto => ({
+    ...category,
+    image: category.image_rendition_url
+      ?? category.image
+      ?? category.image_url
+      ?? category.thumbnail,
+    children: category.children.map(adaptCategory),
+  });
+  return response.data.data.map(adaptCategory);
 }
 
 export async function getProductBrands(): Promise<ProductBrandDto[]> {
   const response =
     await apiClient.get<ApiCollectionResponse<ProductBrandDto>>("/brands");
-  return response.data.data;
+  return response.data.data.map((brand) => ({
+    ...brand,
+    logo: brand.logo_rendition_url ?? brand.logo_url ?? brand.logo,
+    banner_image: brand.banner_rendition_url ?? brand.banner_image,
+  }));
 }
 
 export async function searchProducts(
@@ -291,7 +315,11 @@ export async function searchProducts(
       "/products/search",
       { params: { keyword } },
     );
-  return response.data.data;
+  return response.data.data.map((product) => ({
+    ...product,
+    primary_image_url:
+      product.primary_image_thumb_url ?? product.primary_image_url,
+  }));
 }
 
 export async function getProductDetail(

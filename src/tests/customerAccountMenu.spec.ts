@@ -30,6 +30,9 @@ function createTestRouter(): Router {
       { path: '/register', name: 'register', component: { template: '<main>Register</main>' } },
       { path: '/favorites', name: 'favorites', component: { template: '<main>Favorites</main>' } },
       { path: '/cart', name: 'cart', component: { template: '<main>Cart</main>' } },
+      { path: '/orders', name: 'customer-orders', component: { template: '<main>Orders</main>' } },
+      { path: '/wallet', name: 'wallet', component: { template: '<main>Wallet</main>' } },
+      { path: '/appointments', name: 'customer-appointments', component: { template: '<main>Appointments</main>' } },
       { path: '/admin-shell', name: 'admin-shell', component: { template: '<main>Admin</main>' } },
       { path: '/:pathMatch(.*)*', component: { template: '<main>Fallback</main>' } },
     ],
@@ -138,13 +141,16 @@ describe('F3g.2a customer account menu', () => {
 
     expect(document.body.textContent).toContain('an@example.com')
     expect(document.body.textContent).toContain('Khách hàng')
-    for (const label of ['Tài khoản của tôi', 'Địa chỉ nhận hàng', 'Đơn hàng của tôi']) {
+    for (const label of ['Tài khoản của tôi', 'Địa chỉ nhận hàng']) {
       const item = Array.from(document.body.querySelectorAll('button')).find(
         (button) => button.textContent?.includes(label),
       )
       expect(item?.disabled).toBe(true)
       expect(bodyLink(label)).toBeUndefined()
     }
+    expect(bodyLink('Đơn hàng của tôi')?.getAttribute('href')).toBe('/orders')
+    expect(bodyLink('Ví Mizuki')?.getAttribute('href')).toBe('/wallet')
+    expect(bodyLink('Lịch hẹn của tôi')?.getAttribute('href')).toBe('/appointments')
     expect(bodyLink('Khu vực quản trị')).toBeUndefined()
   })
 

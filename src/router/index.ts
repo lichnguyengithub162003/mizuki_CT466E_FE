@@ -13,6 +13,61 @@ import { isMobileOnboardingViewport } from '@/utils/auth/mobileOnboarding'
 
 const routes: readonly RouteRecordRaw[] = [
   {
+    path: '/admin/login',
+    name: 'admin-login',
+    component: () => import('@/pages/admin/AdminLoginPage.vue'),
+    meta: { layout: 'auth', guestOnly: true },
+  },
+  {
+    path: '/admin',
+    component: () => import('@/layouts/AdminLayout.vue'),
+    meta: { layout: 'admin', requiresAdmin: true },
+    children: [
+      { path: '', redirect: '/admin/dashboard' },
+      {
+        path: 'dashboard',
+        name: 'admin-dashboard',
+        component: () => import('@/pages/admin/AdminDashboardPage.vue'),
+      },
+      {
+        path: 'orders',
+        name: 'admin-orders',
+        component: () => import('@/pages/admin/AdminOrdersListPage.vue'),
+      },
+      { path: 'refunds', name: 'admin-refunds', component: () => import('@/pages/admin/AdminRefundsListPage.vue') },
+      {
+        path: 'branches',
+        name: 'admin-branches',
+        component: () => import('@/pages/admin/AdminBranchesListPage.vue'),
+      },
+      {
+        path: 'branches/create',
+        name: 'admin-branch-create',
+        component: () => import('@/pages/admin/AdminBranchCreatePage.vue'),
+      },
+      {
+        path: 'branches/:id',
+        name: 'admin-branch-detail',
+        component: () => import('@/pages/admin/AdminBranchDetailPage.vue'),
+      },
+      {
+        path: 'staff',
+        name: 'admin-staff',
+        component: () => import('@/pages/admin/AdminStaffListPage.vue'),
+      },
+      {
+        path: 'staff/create',
+        name: 'admin-staff-create',
+        component: () => import('@/pages/admin/AdminStaffCreatePage.vue'),
+      },
+      {
+        path: 'staff/:id',
+        name: 'admin-staff-detail',
+        component: () => import('@/pages/admin/AdminStaffDetailPage.vue'),
+      },
+    ],
+  },
+  {
     path: ROUTE_PATHS.onboarding,
     name: ROUTE_NAMES.onboarding,
     component: () => import('@/pages/auth/OnboardingPage.vue'),
@@ -115,10 +170,52 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer', requiresAuth: true },
   },
   {
+    path: ROUTE_PATHS.vnPayReturn,
+    name: ROUTE_NAMES.vnPayReturn,
+    component: () => import('@/pages/customer/VnPayReturnPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
+    path: ROUTE_PATHS.customerOrders,
+    name: ROUTE_NAMES.customerOrders,
+    component: () => import('@/pages/customer/CustomerOrdersPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  ...(import.meta.env.DEV ? [{
+    path: ROUTE_PATHS.customerOrderPreviewDetail,
+    name: ROUTE_NAMES.customerOrderPreviewDetail,
+    component: () => import('@/pages/customer/CustomerOrderDetailPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  } satisfies RouteRecordRaw] : []),
+  {
+    path: ROUTE_PATHS.customerOrderDetail,
+    name: ROUTE_NAMES.customerOrderDetail,
+    component: () => import('@/pages/customer/CustomerOrderDetailPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
     path: ROUTE_PATHS.skinCare,
     name: ROUTE_NAMES.skinCare,
     component: () => import('@/pages/clinic/SkinCarePage.vue'),
     meta: { layout: 'customer' },
+  },
+  {
+    path: ROUTE_PATHS.skinCareBooking,
+    name: ROUTE_NAMES.skinCareBooking,
+    component: () => import('@/pages/clinic/SkinCareBookingPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
+    path: ROUTE_PATHS.customerAppointments,
+    name: ROUTE_NAMES.customerAppointments,
+    component: () => import('@/pages/customer/CustomerAppointmentsPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
+  },
+  {
+    path: ROUTE_PATHS.customerAppointmentDetail,
+    name: ROUTE_NAMES.customerAppointmentDetail,
+    component: () => import('@/pages/customer/CustomerAppointmentDetailPage.vue'),
+    meta: { layout: 'customer', requiresAuth: true },
   },
   {
     path: ROUTE_PATHS.voucherCenter,
@@ -150,11 +247,11 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
   appRouter.beforeEach(async (to) => {
     const authStore = useAuthStore(pinia)
 
-    if ((to.meta.guestOnly || to.meta.requiresAuth) && !authStore.isInitialized) {
+    if ((to.meta.guestOnly || to.meta.requiresAuth || to.meta.requiresAdmin) && !authStore.isInitialized) {
       await authStore.restoreSession()
     }
 
-    if (to.meta.guestOnly && authStore.isAuthenticated) {
+    if (to.meta.guestOnly && authStore.isAuthenticated && to.name !== 'admin-login') {
       return { name: 'customer-home' }
     }
 
@@ -163,6 +260,20 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
         name: ROUTE_NAMES.login,
         query: { redirect: to.fullPath },
       }
+    }
+
+    if (to.meta.requiresAdmin && !authStore.isAuthenticated) {
+      return { name: 'admin-login', query: { redirect: to.fullPath } }
+    }
+
+    if (to.meta.requiresAdmin && !authStore.isAdmin) {
+      return { name: ROUTE_NAMES.forbidden }
+    }
+
+    if (to.name === 'admin-login' && authStore.isAuthenticated) {
+      return authStore.isAdmin
+        ? { name: 'admin-dashboard' }
+        : { name: ROUTE_NAMES.forbidden }
     }
 
     if (to.name === ROUTE_NAMES.verifyResetCode && !canAccessResetCode()) {

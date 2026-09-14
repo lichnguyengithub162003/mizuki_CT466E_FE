@@ -6,7 +6,8 @@ const props = withDefaults(
   defineProps<{
     modelValue?: string
     id?: string
-    label: string
+    label?: string
+    name?: string
     description?: string
     error?: string
     placeholder?: string
@@ -20,6 +21,8 @@ const props = withDefaults(
   {
     modelValue: '',
     id: undefined,
+    label: undefined,
+    name: undefined,
     description: undefined,
     error: undefined,
     placeholder: undefined,
@@ -55,7 +58,7 @@ function handleInput(event: Event): void {
 <template>
   <div :class="cn('grid gap-2', props.class)">
     <div class="flex items-baseline justify-between gap-4">
-      <label :for="textareaId" class="text-body-sm font-semibold text-foreground">
+      <label v-if="props.label" :for="textareaId" class="text-body-sm font-semibold text-foreground">
         {{ props.label }}
         <span v-if="props.required" class="text-destructive" aria-hidden="true">*</span>
       </label>
@@ -66,6 +69,7 @@ function handleInput(event: Event): void {
     <textarea
       :id="textareaId"
       :value="props.modelValue"
+      :name="props.name"
       :rows="props.rows"
       :maxlength="props.maxLength"
       :placeholder="props.placeholder"

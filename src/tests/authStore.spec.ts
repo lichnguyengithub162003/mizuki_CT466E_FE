@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '@/types/auth'
 
 const authApiMocks = vi.hoisted(() => ({
   login: vi.fn(),
+  staffLogin: vi.fn(),
   register: vi.fn(),
   getCurrentUser: vi.fn(),
   logout: vi.fn(),
@@ -107,5 +108,27 @@ describe('auth store', () => {
     await store.logout()
     expect(authApiMocks.logout).toHaveBeenCalledOnce()
     expect(store.user).toBeNull()
+  })
+
+  it('clears local auth state even when the logout request fails', async () => {
+    authApiMocks.login.mockResolvedValue(user)
+    authApiMocks.logout.mockRejectedValue(new Error('Backend unavailable'))
+    const store = useAuthStore()
+    await store.login({ email: user.email, password: 'password' })
+
+    await expect(store.logout()).rejects.toThrow('Backend unavailable')
+
+    expect(store.user).toBeNull()
+    expect(store.isInitialized).toBe(true)
+  })
+
+  it('recognizes only super admins and branch managers as Admin Portal users', async () => {
+    const store = useAuthStore()
+    authApiMocks.staffLogin.mockResolvedValue({ ...user, role: 'branch_manager' })
+    await store.staffLogin({ email: user.email, password: 'password' })
+    expect(store.isAdmin).toBe(true)
+    authApiMocks.staffLogin.mockResolvedValue({ ...user, role: 'technician' })
+    await store.staffLogin({ email: user.email, password: 'password' })
+    expect(store.isAdmin).toBe(false)
   })
 })

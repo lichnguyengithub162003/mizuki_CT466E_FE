@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Banknote, CheckCircle2, QrCode } from '@lucide/vue'
+import { Banknote, CheckCircle2, QrCode, WalletCards } from '@lucide/vue'
 import { ref, watch, type Component } from 'vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { CheckoutPaymentMethod } from '@/types/customer'
@@ -19,7 +19,13 @@ const selectedId = ref('')
 const paymentIcons: Record<string, Component> = {
   cod: Banknote,
   vnpay: QrCode,
+  wallet: WalletCards,
 }
+
+const currencyFormatter = new Intl.NumberFormat('vi-VN', {
+  style: 'currency',
+  currency: 'VND',
+})
 
 watch(open, (isOpen) => {
   if (isOpen) selectedId.value = props.selectedId
@@ -63,11 +69,34 @@ function confirm(): void {
           class="mt-1 size-4 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         />
         <component :is="paymentIcons[method.id]" class="size-5 flex-none text-primary-700" aria-hidden="true" />
-        <span class="min-w-0">
+        <span class="min-w-0 flex-1">
           <strong class="text-body-sm text-primary-950">
             {{ method.name }}
           </strong>
           <span class="mt-1 block text-caption text-text-secondary">{{ method.description }}</span>
+          <span
+            v-if="method.id === 'wallet' && method.balanceState === 'loading'"
+            class="mt-1 block text-caption text-text-secondary"
+            role="status"
+            data-wallet-balance-loading
+          >
+            Đang tải số dư ví...
+          </span>
+          <span
+            v-else-if="method.id === 'wallet' && method.balanceState === 'ready' && method.balance !== undefined"
+            class="mt-1 block text-body-sm font-semibold text-primary-900"
+            data-wallet-balance
+          >
+            Số dư khả dụng: {{ currencyFormatter.format(method.balance) }}
+          </span>
+          <span
+            v-else-if="method.id === 'wallet' && method.balanceState === 'error'"
+            class="mt-1 block text-caption text-[#8f493f]"
+            role="status"
+            data-wallet-balance-error
+          >
+            Không thể tải số dư. Hệ thống sẽ xác nhận khi đặt hàng.
+          </span>
           <span v-if="method.unavailableReason" class="mt-1 block text-caption font-semibold text-[#8f493f]">{{ method.unavailableReason }}</span>
         </span>
         <CheckCircle2

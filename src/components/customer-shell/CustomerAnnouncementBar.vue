@@ -12,7 +12,7 @@
         </strong>
         <span>Miễn phí giao hàng cho đơn đủ điều kiện</span>
         <span class="text-[#9bb6a7]" aria-hidden="true">•</span>
-        <span>Ưu đãi thay đổi theo chi nhánh đang chọn — nội dung demo</span>
+        <span>Ưu đãi thay đổi theo chi nhánh đang chọn</span>
       </div>
       <div
         class="customer-announcement-sequence flex shrink-0 items-center justify-center gap-3 px-8 text-caption"
@@ -24,7 +24,7 @@
         </strong>
         <span>Miễn phí giao hàng cho đơn đủ điều kiện</span>
         <span class="text-[#9bb6a7]">•</span>
-        <span>Ưu đãi thay đổi theo chi nhánh đang chọn — nội dung demo</span>
+        <span>Ưu đãi thay đổi theo chi nhánh đang chọn</span>
       </div>
     </div>
   </aside>

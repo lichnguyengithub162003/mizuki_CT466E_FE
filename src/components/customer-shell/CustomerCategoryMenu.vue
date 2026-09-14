@@ -3,7 +3,10 @@ import { ChevronDown, Sparkles } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import BasePopover from "@/components/common/BasePopover.vue";
-import { PRODUCT_LISTING_FALLBACK_IMAGE } from "@/api/productListingAdapter";
+import {
+  PRODUCT_LISTING_FALLBACK_IMAGE,
+  resolveCatalogAsset,
+} from "@/api/productListingAdapter";
 import {
   useProductDiscoveryQuery,
   useRepresentativeProductsQuery,
@@ -57,7 +60,11 @@ function closeMenu(): void {
 function representativeImage(categoryId: number): string {
   if (failedImages.value.has(String(categoryId)))
     return PRODUCT_LISTING_FALLBACK_IMAGE;
+  const categoryImage = visibleChildren.value.find(
+    (category) => category.id === categoryId,
+  )?.image;
   return (
+    resolveCatalogAsset(categoryImage) ??
     representativeQuery.data.value?.categories.get(categoryId)?.imageUrl ??
     PRODUCT_LISTING_FALLBACK_IMAGE
   );

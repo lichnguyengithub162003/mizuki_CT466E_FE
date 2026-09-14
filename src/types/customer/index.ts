@@ -144,6 +144,7 @@ export interface CheckoutPaymentMethod {
   readonly available: boolean
   readonly unavailableReason?: string
   readonly balance?: number
+  readonly balanceState?: 'loading' | 'ready' | 'error'
 }
 
 export interface CheckoutTotals {

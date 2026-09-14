@@ -8,22 +8,25 @@ const props = withDefaults(
   defineProps<{
     modelValue?: InputValue
     id?: string
-    label: string
+    label?: string
     description?: string
     error?: string
-    type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'number'
+    type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'number' | 'time' | 'date' | 'datetime-local'
     placeholder?: string
     name?: string
     autocomplete?: string
     inputmode?: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
     disabled?: boolean
     required?: boolean
+    min?: string | number
+    max?: string | number
     reserveErrorSpace?: boolean
     class?: string
   }>(),
   {
     modelValue: '',
     id: undefined,
+    label: undefined,
     description: undefined,
     error: undefined,
     type: 'text',
@@ -68,7 +71,7 @@ function handleInput(event: Event): void {
 
 <template>
   <div :class="cn('grid gap-2', props.reserveErrorSpace && 'content-start', props.class)">
-    <label :for="inputId" class="text-body-sm font-semibold text-foreground">
+    <label v-if="props.label" :for="inputId" class="text-body-sm font-semibold text-foreground">
       {{ props.label }}
       <span v-if="props.required" class="text-destructive" aria-hidden="true">*</span>
     </label>
@@ -90,6 +93,8 @@ function handleInput(event: Event): void {
         :inputmode="props.inputmode"
         :disabled="props.disabled"
         :required="props.required"
+        :min="props.min"
+        :max="props.max"
         :aria-invalid="Boolean(props.error)"
         :aria-describedby="describedBy"
         :class="

@@ -18,6 +18,7 @@ import {
   getGoogleRedirectUrl,
   initializeAuthCsrf,
   login,
+  staffLogin,
   logout,
   register,
   requestPasswordReset,
@@ -66,6 +67,14 @@ describe('auth API contract', () => {
     expect(payload).not.toHaveProperty('email')
   })
 
+  it('uses the exact staff login endpoint with Sanctum CSRF', async () => {
+    const payload = { email: 'manager@mizuki.vn', password: 'password' }
+    apiMocks.post.mockResolvedValue({ data: { data: { ...user, role: 'branch_manager' } } })
+    await staffLogin(payload)
+    expect(apiMocks.ensureCsrfCookie).toHaveBeenCalledOnce()
+    expect(apiMocks.post).toHaveBeenCalledWith('/auth/staff-login', payload)
+  })
+
   it('posts registration with the exact required phone payload', async () => {
     const payload = {
       name: 'Nguyễn Văn A',
@@ -84,6 +93,16 @@ describe('auth API contract', () => {
     await expect(getCurrentUser()).resolves.toEqual(user)
     expect(apiMocks.get).toHaveBeenCalledWith(ENDPOINTS.authMe)
     expect(apiMocks.ensureCsrfCookie).not.toHaveBeenCalled()
+  })
+
+  it('prefers the avatar rendition and preserves the legacy fallback', async () => {
+    const rendition = 'https://res.cloudinary.com/mizuki/avatar.jpg'
+    apiMocks.get
+      .mockResolvedValueOnce({ data: { data: { ...user, avatar: '/legacy/avatar.jpg', avatar_rendition_url: rendition } } })
+      .mockResolvedValueOnce({ data: { data: { ...user, avatar: '/legacy/avatar.jpg' } } })
+
+    await expect(getCurrentUser()).resolves.toMatchObject({ avatar: rendition })
+    await expect(getCurrentUser()).resolves.toMatchObject({ avatar: '/legacy/avatar.jpg' })
   })
 
   it('requests the backend-owned Google redirect URL with an optional safe destination', async () => {

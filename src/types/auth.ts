@@ -1,4 +1,4 @@
-export type AppRole = 'customer' | 'branch_manager' | 'super_admin'
+export type AppRole = 'customer' | 'branch_manager' | 'super_admin' | 'cashier' | 'technician'
 
 export interface AuthenticatedUser {
   readonly id: number
@@ -6,6 +6,7 @@ export interface AuthenticatedUser {
   readonly email: string
   readonly phone: string | null
   readonly avatar: string | null
+  readonly avatar_rendition_url?: string | null
   readonly role: AppRole
   readonly role_label: string
   readonly branch_id: number | null

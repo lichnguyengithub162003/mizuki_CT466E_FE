@@ -10,7 +10,12 @@ import {
 const apiMocks = vi.hoisted(() => ({
   listClinics: vi.fn(),
   listClinicServices: vi.fn(),
+  listClinicCatalogServices: vi.fn(),
   listClinicSlots: vi.fn(),
+  createCustomerAppointment: vi.fn(),
+  listCustomerAppointments: vi.fn(),
+  getCustomerAppointment: vi.fn(),
+  cancelCustomerAppointment: vi.fn(),
 }))
 
 vi.mock('@/api/clinic', () => apiMocks)
@@ -43,7 +48,12 @@ function createQueryClient(): QueryClient {
 
 beforeEach(() => {
   apiMocks.listClinicServices.mockReset().mockResolvedValue([])
+  apiMocks.listClinicCatalogServices.mockReset().mockResolvedValue([])
   apiMocks.listClinicSlots.mockReset().mockResolvedValue({ slots: [] })
+  apiMocks.createCustomerAppointment.mockReset()
+  apiMocks.listCustomerAppointments.mockReset()
+  apiMocks.getCustomerAppointment.mockReset()
+  apiMocks.cancelCustomerAppointment.mockReset()
 })
 
 describe('clinic query enabling', () => {

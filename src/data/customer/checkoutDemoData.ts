@@ -144,16 +144,14 @@ export const checkoutPaymentMethods: readonly CheckoutPaymentMethod[] = [
   {
     id: 'vnpay',
     name: 'VNPay',
-    description: 'Lựa chọn demo, chưa chuyển tới cổng thanh toán.',
+    description: 'Thanh toán an toàn qua cổng VNPay Sandbox.',
     available: true,
   },
   {
     id: 'wallet',
     name: 'Ví Mizuki',
-    description: 'Số dư demo 150.000 ₫.',
-    available: false,
-    unavailableReason: 'Số dư không đủ để thanh toán đơn hàng.',
-    balance: 150_000,
+    description: 'Thanh toán trực tiếp bằng số dư Ví Mizuki.',
+    available: true,
   },
   {
     id: 'atm',

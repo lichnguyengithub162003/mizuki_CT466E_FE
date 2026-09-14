@@ -1,5 +1,4 @@
 export { default as AdminBottomNavigation } from './AdminBottomNavigation.vue'
-export { default as AdminHeader } from './AdminHeader.vue'
 export { default as AdminMoreMenu } from './AdminMoreMenu.vue'
 export { default as AdminMetricCard } from './AdminMetricCard.vue'
 export { default as AdminSidebar } from './AdminSidebar.vue'

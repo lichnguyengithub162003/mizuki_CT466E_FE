@@ -1,0 +1,2 @@
+<script setup lang="ts">defineProps<{ title?: string; description?: string }>()</script>
+<template><div class="rounded-2xl border border-dashed border-border bg-surface p-10 text-center"><h2 class="text-heading-4">{{ title || 'Chưa có dữ liệu' }}</h2><p class="mt-2 text-body-sm text-muted-foreground">{{ description || 'Không có dữ liệu phù hợp với bộ lọc hiện tại.' }}</p><div v-if="$slots.default" class="mt-4"><slot /></div></div></template>
