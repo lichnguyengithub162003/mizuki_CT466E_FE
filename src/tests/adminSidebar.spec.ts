@@ -29,6 +29,7 @@ const adminUser: AuthenticatedUser = {
   role: 'branch_manager',
   role_label: 'Quản lý chi nhánh',
   branch_id: 5,
+  branch: { id: 5, name: 'Mizuki Ninh Kiều' },
   email_verified_at: '2026-09-01T00:00:00Z',
   created_at: '2026-08-01T00:00:00Z',
 }
@@ -47,7 +48,10 @@ async function mountSidebar(options: { collapsed?: boolean; activeKey?: AdminNav
   const router = createTestRouter()
   await router.push('/admin/orders')
   await router.isReady()
-  useAuthStore(pinia).$patch({ user: { ...adminUser }, isInitialized: true })
+  useAuthStore(pinia).$patch({
+    user: { ...adminUser, branch: adminUser.branch ? { ...adminUser.branch } : null },
+    isInitialized: true,
+  })
   useBranchPreferenceStore(pinia).$patch({
     branches: [{
       id: 5,
@@ -124,9 +128,10 @@ describe('AdminSidebar premium navigation', () => {
     const branch = wrapper.get('[data-testid="working-branch"]')
 
     expect(branch.text()).toContain('Chi nhánh đang làm việc')
-    expect(branch.text()).toContain('Mizuki Cần Thơ')
+    expect(branch.text()).toContain('Mizuki Ninh Kiều')
+    expect(branch.text()).not.toContain('Mizuki Cần Thơ')
     expect(branch.text()).not.toContain('Mizuki Vĩnh Long')
-    expect(branch.attributes('aria-label')).toBe('Chi nhánh đang làm việc: Mizuki Cần Thơ')
+    expect(branch.attributes('aria-label')).toBe('Chi nhánh đang làm việc: Mizuki Ninh Kiều')
     expect(branch.element.tagName).toBe('DIV')
     expect(branch.attributes('aria-haspopup')).toBeUndefined()
     expect(branch.attributes('aria-expanded')).toBeUndefined()
@@ -137,7 +142,7 @@ describe('AdminSidebar premium navigation', () => {
 
   it('renders the system-wide context for a super administrator', async () => {
     const { wrapper, pinia } = await mountSidebar()
-    useAuthStore(pinia).$patch({ user: { ...adminUser, role: 'super_admin', branch_id: null } })
+    useAuthStore(pinia).$patch({ user: { ...adminUser, role: 'super_admin', branch_id: null, branch: null } })
     await nextTick()
     const branch = wrapper.get('[data-testid="working-branch"]')
 
@@ -146,12 +151,32 @@ describe('AdminSidebar premium navigation', () => {
     expect(branch.find('[data-testid="working-branch-fallback-icon"]').exists()).toBe(true)
   })
 
-  it('uses a safe neutral branch label when an assignment cannot be resolved', async () => {
+  it.each([null, undefined])('uses a safe neutral label for a missing session branch (%s)', async (missingBranch) => {
     const { wrapper, pinia } = await mountSidebar()
-    useBranchPreferenceStore(pinia).$patch({ branches: [] })
+    useAuthStore(pinia).$patch({ user: { ...adminUser, branch: missingBranch } })
     await nextTick()
 
     expect(wrapper.get('[data-testid="working-branch"]').text()).toContain('Chưa xác định chi nhánh')
+    expect(wrapper.get('[data-testid="working-branch"]').text()).not.toContain('Mizuki Cần Thơ')
+  })
+
+  it('keeps the assigned label when branch preference options change', async () => {
+    const { wrapper, pinia } = await mountSidebar()
+    useBranchPreferenceStore(pinia).$patch({ branches: [], selectedBranchId: null })
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="working-branch"]').text()).toContain('Mizuki Ninh Kiều')
+  })
+
+  it('updates the assigned label when refreshed session user data changes', async () => {
+    const { wrapper, pinia } = await mountSidebar()
+    useAuthStore(pinia).$patch({ user: { ...adminUser, branch_id: 6, branch: { id: 6, name: 'Mizuki Vĩnh Long' } } })
+    await nextTick()
+    expect(wrapper.get('[data-testid="working-branch"]').text()).toContain('Mizuki Vĩnh Long')
+
+    useAuthStore(pinia).$patch({ user: { ...adminUser, branch_id: 6, branch: { id: 6, name: 'Mizuki Vĩnh Long mới' } } })
+    await nextTick()
+    expect(wrapper.get('[data-testid="working-branch"]').text()).toContain('Mizuki Vĩnh Long mới')
   })
 
   it('renders six rounded disclosure group boxes', async () => {
@@ -347,7 +372,7 @@ describe('AdminSidebar premium navigation', () => {
 
     expect(wrapper.get('aside').classes()).toContain('w-20')
     expect(wrapper.get('[data-testid="admin-wordmark"]').text()).toBe('M')
-    expect(wrapper.get('[data-testid="working-branch"]').attributes('title')).toBe('Mizuki Cần Thơ')
+    expect(wrapper.get('[data-testid="working-branch"]').attributes('title')).toBe('Mizuki Ninh Kiều')
     expect(wrapper.get('a[aria-label="Hoàn tiền"]').attributes('aria-current')).toBe('page')
     expect(wrapper.get('a[aria-label="Hoàn tiền"]').classes()).toEqual(expect.arrayContaining(['bg-primary-700', 'text-white']))
     expect(() => wrapper.get('[data-testid="admin-refunds-pending-badge"]')).not.toThrow()

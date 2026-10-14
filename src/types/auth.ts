@@ -10,6 +10,7 @@ export interface AuthenticatedUser {
   readonly role: AppRole
   readonly role_label: string
   readonly branch_id: number | null
+  readonly branch?: { readonly id: number; readonly name: string } | null
   readonly email_verified_at: string | null
   readonly created_at: string
 }

@@ -27,7 +27,6 @@ import AdminRefundPendingBadge from "@/components/admin/AdminRefundPendingBadge.
 import CustomerAccountAvatar from "@/components/customer-shell/CustomerAccountAvatar.vue";
 import { useAdminOrderCounts, useAdminRefundCounts } from "@/queries/admin";
 import { useAuthStore } from "@/stores/auth";
-import { useBranchPreferenceStore } from "@/stores/branchPreference";
 import {
   ADMIN_NAVIGATION_ITEMS,
   type AdminNavigationKey,
@@ -56,7 +55,6 @@ defineEmits<{ toggle: [] }>();
 
 const router = useRouter();
 const auth = useAuthStore();
-const branchStore = useBranchPreferenceStore();
 const orderCounts = useAdminOrderCounts();
 const refundCounts = useAdminRefundCounts();
 const sidebarRoot = ref<HTMLElement | null>(null);
@@ -143,20 +141,16 @@ watch(
   },
 );
 
-const workingBranch = computed(() => {
-  if (auth.user?.role === "super_admin") return null;
-  const assignedBranchId = auth.user?.branch_id;
-  if (assignedBranchId !== null && assignedBranchId !== undefined) {
-    return (
-      branchStore.branches.find((branch) => branch.id === assignedBranchId) ??
-      null
-    );
-  }
-  return null;
-});
 const workingBranchLabel = computed(() => {
-  if (auth.user?.role === "super_admin") return "Toàn hệ thống";
-  if (workingBranch.value) return workingBranch.value.name;
+  if (auth.user?.role === "super_admin" && auth.user.branch_id === null)
+    return "Toàn hệ thống";
+  if (
+    auth.user?.branch_id !== null &&
+    auth.user?.branch_id !== undefined &&
+    auth.user.branch?.id === auth.user.branch_id &&
+    auth.user.branch.name.trim()
+  )
+    return auth.user.branch.name.trim();
   return "Chưa xác định chi nhánh";
 });
 const displayName = computed(() => auth.user?.name?.trim() || "Quản trị viên");
