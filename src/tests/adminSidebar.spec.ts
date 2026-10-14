@@ -4,13 +4,19 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { nextTick } from 'vue'
+import { computed, nextTick, reactive } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import AdminSidebar from '@/components/layout/AdminSidebar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useBranchPreferenceStore } from '@/stores/branchPreference'
 import type { AuthenticatedUser } from '@/types/auth'
 import type { AdminNavigationKey } from '@/types/layout/adminNavigation'
+
+const pendingCounts = reactive({ orders: 12, refunds: 3 })
+vi.mock('@/queries/admin', () => ({
+  useAdminOrderCounts: () => ({ data: computed(() => ({ pending: pendingCounts.orders })) }),
+  useAdminRefundCounts: () => ({ data: computed(() => ({ pending_action: pendingCounts.refunds })) }),
+}))
 
 const wrappers: VueWrapper[] = []
 
@@ -34,7 +40,9 @@ function createTestRouter(): Router {
   })
 }
 
-async function mountSidebar(options: { collapsed?: boolean; activeKey?: AdminNavigationKey } = {}) {
+async function mountSidebar(options: { collapsed?: boolean; activeKey?: AdminNavigationKey; orderPending?: number; refundPending?: number } = {}) {
+  pendingCounts.orders = options.orderPending ?? 12
+  pendingCounts.refunds = options.refundPending ?? 3
   const pinia = createPinia()
   const router = createTestRouter()
   await router.push('/admin/orders')
@@ -73,8 +81,8 @@ async function mountSidebar(options: { collapsed?: boolean; activeKey?: AdminNav
     global: {
       plugins: [pinia, router],
       stubs: {
-        AdminOrderPendingBadge: { props: ['compact'], template: '<span data-testid="admin-orders-pending-badge" class="bg-rose-600">12</span>' },
-        AdminRefundPendingBadge: { props: ['compact'], template: '<span data-testid="admin-refunds-pending-badge" class="bg-rose-600">3</span>' },
+        AdminOrderPendingBadge: { props: ['compact'], setup: () => ({ pendingCounts }), template: '<span v-if="pendingCounts.orders > 0" data-testid="admin-orders-pending-badge" class="bg-rose-600">{{ pendingCounts.orders }}</span>' },
+        AdminRefundPendingBadge: { props: ['compact'], setup: () => ({ pendingCounts }), template: '<span v-if="pendingCounts.refunds > 0" data-testid="admin-refunds-pending-badge" class="bg-rose-600">{{ pendingCounts.refunds }}</span>' },
       },
     },
   })
@@ -230,6 +238,51 @@ describe('AdminSidebar premium navigation', () => {
     expect(refundLink.get('[data-testid="admin-refunds-pending-badge"]').text()).toBe('3')
     expect(orderLink.get('span.min-w-0').classes()).toContain('flex-1')
     expect(orderLink.classes()).toContain('px-3')
+  })
+
+  it('shows one group dot for any positive child count and clears it when all counts reach zero', async () => {
+    const { wrapper } = await mountSidebar({ orderPending: 0, refundPending: 3 })
+    const sales = wrapper.get('[data-testid="admin-nav-group-sales"]')
+    expect(sales.findAll('[data-testid="admin-nav-group-indicator"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="admin-nav-group-indicator"]')).toHaveLength(1)
+    expect(sales.get('[data-testid="admin-refunds-pending-badge"]').text()).toBe('3')
+
+    pendingCounts.orders = 2
+    pendingCounts.refunds = 0
+    await nextTick()
+    expect(sales.findAll('[data-testid="admin-nav-group-indicator"]')).toHaveLength(1)
+    expect(sales.get('[data-testid="admin-orders-pending-badge"]').text()).toBe('2')
+    expect(sales.find('[data-testid="admin-refunds-pending-badge"]').exists()).toBe(false)
+
+    pendingCounts.orders = 0
+    await nextTick()
+    expect(wrapper.findAll('[data-testid="admin-nav-group-indicator"]')).toHaveLength(0)
+  })
+
+  it('keeps the parent dot visible across disclosure changes without changing navigation', async () => {
+    const { wrapper } = await mountSidebar({ activeKey: 'orders', orderPending: 1, refundPending: 0 })
+    const sales = groupButton(wrapper, 'sales')
+    expect(sales.find('[data-testid="admin-nav-group-indicator"]').exists()).toBe(true)
+    await sales.trigger('click')
+    expect(sales.attributes('aria-expanded')).toBe('false')
+    expect(sales.find('[data-testid="admin-nav-group-indicator"]').exists()).toBe(true)
+    await sales.trigger('click')
+    expect(sales.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('a[href="/admin/orders"]').attributes('aria-current')).toBe('page')
+  })
+
+  it('shows the group dot in compact mode while keeping individual links and numbered badges', async () => {
+    const { wrapper } = await mountSidebar({ collapsed: true, activeKey: 'refunds', orderPending: 0, refundPending: 4 })
+    const sales = wrapper.get('[data-testid="admin-nav-compact-group-sales"]')
+    expect(sales.get('[data-testid="admin-nav-group-indicator"]').attributes('aria-hidden')).toBe('true')
+    expect(sales.get('a[href="/admin/refunds"]').attributes('aria-current')).toBe('page')
+    expect(sales.get('[data-testid="admin-refunds-pending-badge"]').text()).toBe('4')
+    expect(wrapper.findAll('[data-testid="admin-nav-group-indicator"]')).toHaveLength(1)
+
+    pendingCounts.refunds = 0
+    await nextTick()
+    expect(sales.find('[data-testid="admin-nav-group-indicator"]').exists()).toBe(false)
+    expect(sales.find('[data-testid="admin-refunds-pending-badge"]').exists()).toBe(false)
   })
 
   it('keeps the account footer outside the only scrolling navigation region', async () => {

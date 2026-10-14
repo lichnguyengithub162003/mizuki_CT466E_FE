@@ -25,6 +25,7 @@ import { RouterLink, useRouter } from "vue-router";
 import AdminOrderPendingBadge from "@/components/admin/AdminOrderPendingBadge.vue";
 import AdminRefundPendingBadge from "@/components/admin/AdminRefundPendingBadge.vue";
 import CustomerAccountAvatar from "@/components/customer-shell/CustomerAccountAvatar.vue";
+import { useAdminOrderCounts, useAdminRefundCounts } from "@/queries/admin";
 import { useAuthStore } from "@/stores/auth";
 import { useBranchPreferenceStore } from "@/stores/branchPreference";
 import {
@@ -56,6 +57,8 @@ defineEmits<{ toggle: [] }>();
 const router = useRouter();
 const auth = useAuthStore();
 const branchStore = useBranchPreferenceStore();
+const orderCounts = useAdminOrderCounts();
+const refundCounts = useAdminRefundCounts();
 const sidebarRoot = ref<HTMLElement | null>(null);
 const accountMenuOpen = ref(false);
 const loggingOut = ref(false);
@@ -111,6 +114,17 @@ function itemsForGroup(group: SidebarGroup) {
     );
     return item ? [item] : [];
   });
+}
+const pendingByNavigationKey = computed<Partial<Record<AdminNavigationKey, number>>>(
+  () => ({
+    orders: orderCounts.data.value?.pending ?? 0,
+    refunds: refundCounts.data.value?.pending_action ?? 0,
+  }),
+);
+function hasPendingChildren(group: SidebarGroup): boolean {
+  return group.itemKeys.some(
+    (key) => (pendingByNavigationKey.value[key] ?? 0) > 0,
+  );
 }
 
 const activeGroupId = computed(() => groupForKey(props.activeKey)?.id ?? null);
@@ -297,25 +311,55 @@ onBeforeUnmount(() => {
         <template v-if="props.collapsed">
           <div class="grid gap-1.5">
             <RouterLink
-              v-for="item in ADMIN_NAVIGATION_ITEMS"
-              :key="item.key"
-              :to="item.to"
-              :aria-label="item.label"
-              :title="item.label"
-              :aria-current="props.activeKey === item.key ? 'page' : undefined"
+              :to="overviewItem.to"
+              :aria-label="overviewItem.label"
+              :title="overviewItem.label"
+              :aria-current="props.activeKey === overviewItem.key ? 'page' : undefined"
               :class="
                 cn(
                   'relative grid min-h-11 place-items-center rounded-[0.9rem] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                  props.activeKey === item.key
+                  props.activeKey === overviewItem.key
                     ? 'bg-primary-700 text-white shadow-sm'
                     : 'text-muted-foreground hover:bg-primary-50 hover:text-primary-900',
                 )
               "
             >
-              <component :is="item.icon" class="size-4" aria-hidden="true" />
-              <AdminOrderPendingBadge v-if="item.key === 'orders'" compact />
-              <AdminRefundPendingBadge v-if="item.key === 'refunds'" compact />
+              <component :is="overviewItem.icon" class="size-4" aria-hidden="true" />
             </RouterLink>
+            <section
+              v-for="group in sidebarGroups"
+              :key="group.id"
+              class="relative grid gap-1.5"
+              :aria-label="group.label"
+              :data-testid="`admin-nav-compact-group-${group.id}`"
+            >
+              <span
+                v-if="hasPendingChildren(group)"
+                class="pointer-events-none absolute left-0 top-4 z-10 size-1.5 rounded-full bg-rose-600 ring-2 ring-surface"
+                aria-hidden="true"
+                data-testid="admin-nav-group-indicator"
+              />
+              <RouterLink
+                v-for="item in itemsForGroup(group)"
+                :key="item.key"
+                :to="item.to"
+                :aria-label="item.label"
+                :title="item.label"
+                :aria-current="props.activeKey === item.key ? 'page' : undefined"
+                :class="
+                  cn(
+                    'relative grid min-h-11 place-items-center rounded-[0.9rem] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                    props.activeKey === item.key
+                      ? 'bg-primary-700 text-white shadow-sm'
+                      : 'text-muted-foreground hover:bg-primary-50 hover:text-primary-900',
+                  )
+                "
+              >
+                <component :is="item.icon" class="size-4" aria-hidden="true" />
+                <AdminOrderPendingBadge v-if="item.key === 'orders'" compact />
+                <AdminRefundPendingBadge v-if="item.key === 'refunds'" compact />
+              </RouterLink>
+            </section>
           </div>
         </template>
 
@@ -368,6 +412,12 @@ onBeforeUnmount(() => {
                   aria-hidden="true"
                 />
                 <span class="min-w-0 flex-1 truncate">{{ group.label }}</span>
+                <span
+                  v-if="hasPendingChildren(group)"
+                  class="size-1.5 shrink-0 rounded-full bg-rose-600 ring-2 ring-surface"
+                  aria-hidden="true"
+                  data-testid="admin-nav-group-indicator"
+                />
                 <ChevronDown
                   :class="
                     cn(
