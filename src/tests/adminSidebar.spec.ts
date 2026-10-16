@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { computed, nextTick, reactive } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
@@ -342,20 +342,40 @@ describe('AdminSidebar premium navigation', () => {
     expect(source).toContain('bottom: 0')
     expect(source).toContain('width: 14rem')
     expect(menu.text()).toContain('Đăng xuất')
-    const profile = menu.get('button[disabled]')
+    const profile = menu.get('a[href="/profile"]')
     expect(profile.text()).toBe('Hồ sơ cá nhân')
-    expect(profile.classes()).toEqual(expect.arrayContaining(['cursor-not-allowed', 'gap-2.5', 'px-3', 'py-2.5', 'opacity-60']))
+    expect(profile.attributes('role')).toBe('menuitem')
+    expect(profile.attributes('aria-disabled')).toBeUndefined()
+    expect(profile.attributes('title')).toBeUndefined()
+    expect(profile.classes()).toEqual(expect.arrayContaining(['gap-2.5', 'px-3', 'py-2.5']))
     expect(profile.find('svg').exists()).toBe(true)
     const logout = menu.findAll('button').find((button) => button.text().includes('Đăng xuất'))
     expect(logout).toBeDefined()
     expect(logout?.classes()).toEqual(expect.arrayContaining([
       'text-rose-600', 'hover:bg-rose-50', 'hover:text-rose-700', 'px-3', 'py-2.5',
     ]))
+    for (const token of ['min-h-11', 'text-[13px]', 'font-medium', 'leading-5', 'gap-2.5']) {
+      expect(profile.classes()).toContain(token)
+      expect(logout?.classes()).toContain(token)
+    }
     expect(trigger.text()).toContain(adminUser.name)
     expect(trigger.text()).toContain(adminUser.email)
     await trigger.trigger('click')
     expect(wrapper.find('[data-testid="admin-account-menu"]').exists()).toBe(false)
     expect(trigger.attributes('aria-expanded')).toBe('false')
+  })
+
+  it('navigates from the account menu to Profile and marks it active', async () => {
+    const { wrapper, router } = await mountSidebar()
+    await wrapper.get('[data-testid="admin-account-trigger"]').trigger('click')
+    await wrapper.get('a[href="/profile"]').trigger('click')
+    await flushPromises()
+    await wrapper.setProps({ activeKey: null })
+    expect(router.currentRoute.value.path).toBe('/profile')
+    expect(wrapper.find('[data-testid="admin-account-menu"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="admin-account-trigger"]').trigger('click')
+    expect(wrapper.get('a[href="/profile"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('a[href="/admin/dashboard"][aria-current="page"]').exists()).toBe(false)
   })
 
   it('closes the account popup with Escape', async () => {

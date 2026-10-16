@@ -92,6 +92,7 @@ const activeKey = computed<CustomerNavigationKey>(() => {
     || route.name === ROUTE_NAMES.customerOrderPreviewDetail
     || route.name === ROUTE_NAMES.customerAppointments
     || route.name === ROUTE_NAMES.customerAppointmentDetail
+    || route.name === ROUTE_NAMES.profile
   ) {
     return 'account'
   }

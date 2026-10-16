@@ -32,6 +32,7 @@ function createTestRouter(): Router {
       { path: '/cart', name: 'cart', component: { template: '<main>Cart</main>' } },
       { path: '/orders', name: 'customer-orders', component: { template: '<main>Orders</main>' } },
       { path: '/wallet', name: 'wallet', component: { template: '<main>Wallet</main>' } },
+      { path: '/profile', name: 'profile', component: { template: '<main>Profile</main>' } },
       { path: '/appointments', name: 'customer-appointments', component: { template: '<main>Appointments</main>' } },
       { path: '/admin-shell', name: 'admin-shell', component: { template: '<main>Admin</main>' } },
       { path: '/:pathMatch(.*)*', component: { template: '<main>Fallback</main>' } },
@@ -130,7 +131,7 @@ describe('F3g.2a customer account menu', () => {
     expect(router.currentRoute.value.path).toBe('/register')
   })
 
-  it('renders confirmed identity, initials, email, and disabled pending destinations', async () => {
+  it('renders confirmed identity, an enabled Profile link, and disabled address placeholder', async () => {
     useAuthStore(pinia).$patch({ user: user() })
     const { wrapper } = await mountHeader()
 
@@ -141,17 +142,42 @@ describe('F3g.2a customer account menu', () => {
 
     expect(document.body.textContent).toContain('an@example.com')
     expect(document.body.textContent).toContain('Khách hàng')
-    for (const label of ['Tài khoản của tôi', 'Địa chỉ nhận hàng']) {
-      const item = Array.from(document.body.querySelectorAll('button')).find(
-        (button) => button.textContent?.includes(label),
-      )
-      expect(item?.disabled).toBe(true)
-      expect(bodyLink(label)).toBeUndefined()
+    expect(bodyLink('Tài khoản của tôi')?.getAttribute('href')).toBe('/profile')
+    expect(bodyLink('Tài khoản của tôi')?.getAttribute('aria-disabled')).toBeNull()
+    const profile = bodyLink('Tài khoản của tôi')
+    const logout = bodyButton('Đăng xuất')
+    for (const token of ['min-h-11', 'text-body-sm', 'font-medium', 'gap-3', 'px-3', 'py-2']) {
+      expect(profile?.classList.contains(token)).toBe(true)
+      expect(logout?.classList.contains(token)).toBe(true)
     }
+    const address = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes('Địa chỉ nhận hàng'))
+    expect(address?.disabled).toBe(true)
     expect(bodyLink('Đơn hàng của tôi')?.getAttribute('href')).toBe('/orders')
     expect(bodyLink('Ví Mizuki')?.getAttribute('href')).toBe('/wallet')
     expect(bodyLink('Lịch hẹn của tôi')?.getAttribute('href')).toBe('/appointments')
     expect(bodyLink('Khu vực quản trị')).toBeUndefined()
+  })
+
+  it('navigates to Profile from desktop and mobile account menus with active state', async () => {
+    useAuthStore(pinia).$patch({ user: user() })
+    const { wrapper, router } = await mountHeader()
+    await wrapper.get('[data-testid="desktop-account-trigger"]').trigger('click')
+    bodyLink('Tài khoản của tôi')?.click()
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/profile')
+    await wrapper.get('[data-testid="desktop-account-trigger"]').trigger('click')
+    expect(bodyLink('Tài khoản của tôi')?.getAttribute('aria-current')).toBe('page')
+
+    wrapper.unmount()
+    wrappers.splice(wrappers.indexOf(wrapper), 1)
+    document.body.innerHTML = ''
+
+    const mobile = await mountMobile()
+    await mobile.wrapper.get('[data-testid="mobile-account-trigger"]').trigger('click')
+    await nextTick()
+    bodyLink('Tài khoản của tôi')?.click()
+    await flushPromises()
+    expect(mobile.router.currentRoute.value.path).toBe('/profile')
   })
 
   it('renders only a valid confirmed avatar and otherwise falls back to initials', async () => {

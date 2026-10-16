@@ -230,6 +230,12 @@ const routes: readonly RouteRecordRaw[] = [
     meta: { layout: 'customer', requiresAuth: true },
   },
   {
+    path: ROUTE_PATHS.profile,
+    name: ROUTE_NAMES.profile,
+    component: () => import('@/pages/ProfilePage.vue'),
+    meta: { layout: 'foundation', requiresAuth: true },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: ROUTE_NAMES.notFound,
     component: () => import('@/pages/foundation/NotFoundPage.vue'),

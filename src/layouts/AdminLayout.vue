@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Menu } from '@lucide/vue'
+import { Menu, UserRound } from '@lucide/vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import AdminDrawer from '@/components/admin/AdminDrawer.vue'
 import AdminLogoutButton from '@/components/admin/AdminLogoutButton.vue'
@@ -21,10 +21,10 @@ const route = useRoute()
 const collapsed = ref(false)
 const drawer = ref(false)
 const isTableWorkspace = computed(() => ['/admin/orders', '/admin/refunds'].includes(route.path))
-const activeKey = computed<AdminNavigationKey>(() =>
+const activeKey = computed<AdminNavigationKey | null>(() =>
   ADMIN_NAVIGATION_ITEMS.find(
     (item) => route.path === item.to || route.path.startsWith(`${item.to}/`),
-  )?.key ?? 'overview',
+  )?.key ?? null,
 )
 </script>
 
@@ -58,6 +58,9 @@ const activeKey = computed<AdminNavigationKey>(() =>
           <AdminRefundPendingBadge v-if="item.key === 'refunds'" />
         </RouterLink>
       </nav>
+      <RouterLink to="/profile" :aria-current="route.path === '/profile' ? 'page' : undefined" class="mt-3 flex min-h-11 items-center gap-3 rounded-xl border-t border-border px-3 py-3 text-body-sm text-foreground hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-ring" @click="drawer = false">
+        <UserRound class="size-5" aria-hidden="true" /> Hồ sơ cá nhân
+      </RouterLink>
       <div class="mt-3 border-t border-border pt-3"><AdminLogoutButton /></div>
     </AdminDrawer>
   </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CalendarDays, LogIn, LogOut, MapPin, Package, Settings, UserPlus, UserRound, WalletCards } from '@lucide/vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { ROUTE_PATHS } from '@/constants/routes'
 import { useAuthStore } from '@/stores/auth'
 import { pinia } from '@/stores/pinia'
@@ -17,8 +17,8 @@ const emit = defineEmits<{
 }>()
 
 const authStore = useAuthStore(pinia)
+const route = useRoute()
 const pendingItems = [
-  { label: 'Tài khoản của tôi', icon: UserRound },
   { label: 'Địa chỉ nhận hàng', icon: MapPin },
 ] as const
 </script>
@@ -40,6 +40,10 @@ const pendingItems = [
       </div>
 
       <div class="grid gap-1" aria-label="Tiện ích tài khoản">
+        <RouterLink :to="ROUTE_PATHS.profile" :aria-current="route.path === ROUTE_PATHS.profile ? 'page' : undefined" :class="['motion-interactive flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-body-sm font-medium no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring', route.path === ROUTE_PATHS.profile ? 'bg-primary-50 text-primary-900' : 'text-foreground hover:bg-primary-50']" @click="emit('close')">
+          <UserRound class="size-4 shrink-0" aria-hidden="true" />
+          Tài khoản của tôi
+        </RouterLink>
         <RouterLink :to="ROUTE_PATHS.wallet" class="motion-interactive flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-body-sm text-foreground no-underline hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" @click="emit('close')">
           <WalletCards class="size-4 shrink-0" aria-hidden="true" />
           Ví Mizuki
@@ -78,7 +82,7 @@ const pendingItems = [
       <div class="border-t border-border pt-2">
         <button
           type="button"
-          class="motion-interactive flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-body-sm font-semibold text-danger hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60"
+          class="motion-interactive flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-body-sm font-medium text-danger hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60"
           :disabled="loggingOut"
           :aria-busy="loggingOut"
           @click="emit('logout')"

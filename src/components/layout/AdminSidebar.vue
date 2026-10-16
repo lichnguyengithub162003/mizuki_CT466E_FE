@@ -21,7 +21,7 @@ import {
   Users,
   UserRound,
 } from "@lucide/vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import AdminOrderPendingBadge from "@/components/admin/AdminOrderPendingBadge.vue";
 import AdminRefundPendingBadge from "@/components/admin/AdminRefundPendingBadge.vue";
 import CustomerAccountAvatar from "@/components/customer-shell/CustomerAccountAvatar.vue";
@@ -49,11 +49,12 @@ interface SidebarGroup {
 
 const props = defineProps<{
   collapsed: boolean;
-  activeKey: AdminNavigationKey;
+  activeKey: AdminNavigationKey | null;
 }>();
 defineEmits<{ toggle: [] }>();
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuthStore();
 const orderCounts = useAdminOrderCounts();
 const refundCounts = useAdminRefundCounts();
@@ -102,7 +103,8 @@ const sidebarGroups: readonly SidebarGroup[] = [
   },
 ];
 
-function groupForKey(key: AdminNavigationKey): SidebarGroup | undefined {
+function groupForKey(key: AdminNavigationKey | null): SidebarGroup | undefined {
+  if (key === null) return undefined;
   return sidebarGroups.find((group) => group.itemKeys.includes(key));
 }
 function itemsForGroup(group: SidebarGroup) {
@@ -468,16 +470,16 @@ onBeforeUnmount(() => {
         aria-label="Menu tài khoản quản trị"
         data-testid="admin-account-menu"
       >
-        <button
-          type="button"
-          class="flex w-full cursor-not-allowed items-center gap-2.5 rounded-xl px-3 py-2.5 text-body-sm font-medium text-muted-foreground opacity-60"
-          disabled
+        <RouterLink
+          to="/profile"
+          :class="cn('flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium leading-5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring', route.path === '/profile' ? 'bg-primary-50 text-primary-900' : 'text-foreground hover:bg-primary-50')"
           role="menuitem"
-          title="Hồ sơ cá nhân chưa khả dụng"
+          :aria-current="route.path === '/profile' ? 'page' : undefined"
+          @click="accountMenuOpen = false"
         >
           <UserRound class="size-4 shrink-0" aria-hidden="true" />
           <span>Hồ sơ cá nhân</span>
-        </button>
+        </RouterLink>
         <div
           class="mx-2 my-1 h-px bg-border/50"
           role="separator"
@@ -485,7 +487,7 @@ onBeforeUnmount(() => {
         ></div>
         <button
           type="button"
-          class="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-body-sm font-medium text-rose-600 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60"
+          class="flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium leading-5 text-rose-600 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60"
           :disabled="loggingOut"
           role="menuitem"
           @click="logout"
