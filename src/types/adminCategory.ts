@@ -4,6 +4,8 @@ export interface AdminCategoryAncestor {
   slug: string
 }
 
+export type AdminCategoryStatus = 'draft' | 'published' | 'hidden'
+
 export interface AdminCategoryRecord {
   id: number
   parent_id: number | null
@@ -13,7 +15,9 @@ export interface AdminCategoryRecord {
   image_url: string | null
   image_rendition_url: string | null
   sort_order: number
+  status: AdminCategoryStatus
   is_active: boolean
+  is_featured: boolean
   parent: AdminCategoryAncestor | null
   children_count: number
   has_children: boolean
@@ -51,13 +55,34 @@ export type AdminCategoryListParams = AdminCategoryListOptions & (
   | { mode: 'children'; parent_id: number }
 )
 
-export interface AdminCategoryMutation {
+interface AdminCategoryMutationFields {
   parent_id: number | null
   name: string
   slug: string
   description: string | null
   sort_order: number
-  is_active: boolean
+  is_featured?: boolean
   image_upload_token?: string
   image_url?: null
+}
+
+type AdminCategoryLifecycleInput =
+  | { status: AdminCategoryStatus; is_active?: never }
+  | { status?: never; is_active: boolean }
+
+export type AdminCategoryMutation = AdminCategoryMutationFields & AdminCategoryLifecycleInput
+
+export interface AdminCategoryChildCreateRequest {
+  name: string
+  slug: string
+  description?: string | null
+  sort_order?: number
+  status?: AdminCategoryStatus
+  is_featured?: boolean
+  image_upload_token?: string
+}
+
+export type AdminCategoryCreateRequest = AdminCategoryMutation & {
+  attach_existing_child_ids?: number[]
+  new_children?: AdminCategoryChildCreateRequest[]
 }

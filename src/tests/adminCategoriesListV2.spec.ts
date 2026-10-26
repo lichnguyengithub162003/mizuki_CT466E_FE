@@ -15,7 +15,7 @@ vi.mock('@/api/auth/authApi', () => ({ getCurrentUser: mocks.getCurrentUser }))
 function category(id: number, parentId: number | null = null, overrides: Partial<AdminCategoryRecord> = {}): AdminCategoryRecord {
   return {
     id, parent_id: parentId, name: `Danh mục ${id}`, slug: `danh-muc-${id}`, description: null,
-    image_url: null, image_rendition_url: null, sort_order: id, is_active: true,
+    image_url: null, image_rendition_url: null, sort_order: id, status: 'published', is_active: true, is_featured: false,
     parent: parentId === null ? null : { id: parentId, name: `Danh mục ${parentId}`, slug: `danh-muc-${parentId}` },
     children_count: 0, has_children: false, product_count: id,
     ancestors: parentId === null ? [] : [{ id: parentId, name: `Danh mục ${parentId}`, slug: `danh-muc-${parentId}` }],
@@ -57,7 +57,7 @@ beforeEach(() => {
 })
 
 describe('Admin Categories V2 foundation', () => {
-  it('registers the protected route for admin roles only', async () => {
+  it('allows staff to read the category list but rejects customers and guests', async () => {
     const auth = useAuthStore(pinia)
     const guest = createAppRouter(createMemoryHistory())
     mocks.getCurrentUser.mockRejectedValue({ name: 'ApplicationError', kind: 'unauthorized' })
@@ -65,7 +65,7 @@ describe('Admin Categories V2 foundation', () => {
     expect(guest.currentRoute.value.path).toBe('/admin/login')
     expect(guest.currentRoute.value.query.redirect).toBe('/admin/categories')
 
-    for (const role of ['customer', 'branch_manager', 'super_admin'] as const) {
+    for (const role of ['customer', 'cashier', 'sales_staff', 'technician', 'branch_manager', 'super_admin'] as const) {
       auth.$patch({ user: { id: 2, name: 'QA', email: 'qa@example.test', phone: null, avatar: null, role, role_label: role, branch_id: null, email_verified_at: null, created_at: '' }, isInitialized: true })
       const router = createAppRouter(createMemoryHistory())
       await router.push('/admin/categories')
@@ -406,7 +406,7 @@ describe('Admin Categories V2 table controls', () => {
 })
 
 describe('Admin Categories V2 navigation', () => {
-  it('protects create, detail and edit routes with the existing admin guard', async () => {
+  it('allows staff to read detail but reserves create and edit routes for Super Admin', async () => {
     const auth = useAuthStore(pinia)
     mocks.getCurrentUser.mockRejectedValue({ name: 'ApplicationError', kind: 'unauthorized' })
     for (const path of ['/admin/categories/create', '/admin/categories/17', '/admin/categories/17/edit']) {
@@ -415,12 +415,13 @@ describe('Admin Categories V2 navigation', () => {
       expect(guest.currentRoute.value.path).toBe('/admin/login')
       expect(guest.currentRoute.value.query.redirect).toBe(path)
     }
-    for (const role of ['customer', 'branch_manager', 'super_admin'] as const) {
+    for (const role of ['customer', 'cashier', 'sales_staff', 'technician', 'branch_manager', 'super_admin'] as const) {
       auth.$patch({ user: { id: 2, name: 'QA', email: 'qa@example.test', phone: null, avatar: null, role, role_label: role, branch_id: null, email_verified_at: null, created_at: '' }, isInitialized: true })
       for (const path of ['/admin/categories/create', '/admin/categories/17', '/admin/categories/17/edit']) {
         const router = createAppRouter(createMemoryHistory())
         await router.push(path)
-        expect(router.currentRoute.value.path).toBe(role === 'customer' ? '/forbidden' : path)
+        const mayRead = path === '/admin/categories/17' && role !== 'customer'
+        expect(router.currentRoute.value.path).toBe(role === 'super_admin' || mayRead ? path : '/forbidden')
       }
     }
   })

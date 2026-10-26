@@ -2,7 +2,7 @@ import { apiClient } from "@/api/clients";
 import { ensureCsrfCookie } from "@/api/csrf";
 import { ENDPOINTS } from "@/constants/endpoints";
 import type { ApiResponse } from "@/types/api";
-import type { AdminCategoryListParams, AdminCategoryMutation, AdminCategoryPage, AdminCategoryRecord, AdminCategoryPagination } from "@/types/adminCategory";
+import type { AdminCategoryCreateRequest, AdminCategoryListParams, AdminCategoryMutation, AdminCategoryPage, AdminCategoryRecord, AdminCategoryPagination } from "@/types/adminCategory";
 import type {
   AdminListParams,
   AdminModule,
@@ -119,8 +119,32 @@ export async function getAdminCategory(id: number | string): Promise<AdminCatego
   return response.data.data;
 }
 
-export function createAdminCategory(payload: AdminCategoryMutation): Promise<AdminCategoryRecord> {
-  return mutate<AdminCategoryRecord>('post', ENDPOINTS.adminCategories, payload);
+export function createAdminCategory(payload: AdminCategoryCreateRequest): Promise<AdminCategoryRecord> {
+  const data = {
+    name: payload.name,
+    slug: payload.slug,
+    parent_id: payload.parent_id,
+    description: payload.description,
+    sort_order: payload.sort_order,
+    ...(payload.status !== undefined ? { status: payload.status } : { is_active: payload.is_active }),
+    ...(payload.is_featured !== undefined ? { is_featured: payload.is_featured } : {}),
+    ...(payload.image_upload_token !== undefined
+      ? { image_upload_token: payload.image_upload_token }
+      : payload.image_url === null ? { image_url: null } : {}),
+    ...(payload.attach_existing_child_ids?.length ? { attach_existing_child_ids: payload.attach_existing_child_ids } : {}),
+    ...(payload.new_children?.length ? {
+      new_children: payload.new_children.map((child) => ({
+        name: child.name,
+        slug: child.slug,
+        ...(child.description !== undefined ? { description: child.description } : {}),
+        ...(child.sort_order !== undefined ? { sort_order: child.sort_order } : {}),
+        ...(child.status !== undefined ? { status: child.status } : {}),
+        ...(child.is_featured !== undefined ? { is_featured: child.is_featured } : {}),
+        ...(child.image_upload_token !== undefined ? { image_upload_token: child.image_upload_token } : {}),
+      })),
+    } : {}),
+  };
+  return mutate<AdminCategoryRecord>('post', ENDPOINTS.adminCategories, data);
 }
 
 export function updateAdminCategory(id: number | string, payload: AdminCategoryMutation): Promise<AdminCategoryRecord> {

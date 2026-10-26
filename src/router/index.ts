@@ -43,11 +43,13 @@ const routes: readonly RouteRecordRaw[] = [
         path: 'categories/create',
         name: 'admin-category-create',
         component: () => import('@/pages/admin/AdminCategoryEditorPage.vue'),
+        meta: { requiresSuperAdmin: true },
       },
       {
         path: 'categories/:id/edit',
         name: 'admin-category-edit',
         component: () => import('@/pages/admin/AdminCategoryEditorPage.vue'),
+        meta: { requiresSuperAdmin: true },
       },
       {
         path: 'categories/:id',
@@ -273,7 +275,7 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
   appRouter.beforeEach(async (to) => {
     const authStore = useAuthStore(pinia)
 
-    if ((to.meta.guestOnly || to.meta.requiresAuth || to.meta.requiresAdmin) && !authStore.isInitialized) {
+    if ((to.meta.guestOnly || to.meta.requiresAuth || to.meta.requiresAdmin || to.meta.requiresSuperAdmin) && !authStore.isInitialized) {
       await authStore.restoreSession()
     }
 
@@ -292,7 +294,13 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
       return { name: 'admin-login', query: { redirect: to.fullPath } }
     }
 
-    if (to.meta.requiresAdmin && !authStore.isAdmin) {
+    const categoryRead = to.name === 'admin-categories' || to.name === 'admin-category-detail'
+    const categoryStaffReader = categoryRead && authStore.role !== null && authStore.role !== 'customer'
+    if (to.meta.requiresAdmin && !authStore.isAdmin && !categoryStaffReader) {
+      return { name: ROUTE_NAMES.forbidden }
+    }
+
+    if (to.meta.requiresSuperAdmin && authStore.role !== 'super_admin') {
       return { name: ROUTE_NAMES.forbidden }
     }
 

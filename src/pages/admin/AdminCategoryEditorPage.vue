@@ -6,7 +6,7 @@ import AdminImagePicker from '@/components/admin/AdminImagePicker.vue'
 import BaseSkeleton from '@/components/common/BaseSkeleton.vue'
 import { createAdminCategory, getAdminCategories, getAdminCategory, updateAdminCategory } from '@/api/adminApi'
 import { isApplicationError } from '@/types/admin'
-import type { AdminCategoryMutation, AdminCategoryRecord } from '@/types/adminCategory'
+import type { AdminCategoryChildCreateRequest, AdminCategoryCreateRequest, AdminCategoryMutation, AdminCategoryRecord, AdminCategoryStatus } from '@/types/adminCategory'
 
 type ImageValue = { image_url?: string | null; upload_token?: string | null; preview_url?: string | null }
 type ImageAction = 'keep' | 'replace' | 'remove'
@@ -20,7 +20,12 @@ const loadError = ref('')
 const saving = ref(false)
 const saveError = ref('')
 const errors = reactive<Record<string, string>>({})
-const form = reactive({ name: '', slug: '', parent_id: null as number | null, description: '', sort_order: 0, is_active: true })
+const form = reactive({
+  name: '', slug: '', parent_id: null as number | null, description: '', sort_order: 0,
+  status: null as AdminCategoryStatus | null, is_active: true, is_featured: false,
+})
+const existingChildIds = ref<number[]>([])
+const newChildDrafts = ref<AdminCategoryChildCreateRequest[]>([])
 const imageValue = ref<ImageValue | null>(null)
 const imageAction = ref<ImageAction>('keep')
 const imagePending = ref(false)
@@ -39,7 +44,9 @@ let parentTimer: number | undefined
 
 function clearErrors(): void { Object.keys(errors).forEach(key => delete errors[key]); saveError.value = '' }
 function resetForm(): void {
-  Object.assign(form, { name: '', slug: '', parent_id: null, description: '', sort_order: 0, is_active: true })
+  Object.assign(form, { name: '', slug: '', parent_id: null, description: '', sort_order: 0, status: null, is_active: true, is_featured: false })
+  existingChildIds.value = []
+  newChildDrafts.value = []
   category.value = null
   imageValue.value = null
   imageAction.value = 'keep'
@@ -67,7 +74,8 @@ async function loadDetail(): Promise<void> {
     category.value = result
     Object.assign(form, {
       name: result.name, slug: result.slug, parent_id: result.parent_id,
-      description: result.description ?? '', sort_order: result.sort_order, is_active: result.is_active,
+      description: result.description ?? '', sort_order: result.sort_order,
+      status: result.status ?? null, is_active: result.is_active, is_featured: result.is_featured ?? false,
     })
     selectedParentName.value = result.parent?.name ?? (result.parent_id === null ? '' : 'Chưa xác định danh mục cha')
     imageValue.value = { image_url: result.image_rendition_url || result.image_url }
@@ -145,15 +153,26 @@ async function submit(): Promise<void> {
   if (!form.slug.trim()) errors.slug = 'Vui lòng nhập slug.'
   if (!Number.isInteger(Number(form.sort_order)) || Number(form.sort_order) < 0) errors.sort_order = 'Thứ tự phải là số nguyên không âm.'
   if (Object.keys(errors).length) return
-  const payload: AdminCategoryMutation = {
+  const fields = {
     name: form.name.trim(), slug: form.slug.trim(), parent_id: form.parent_id,
-    description: form.description.trim() || null, sort_order: Number(form.sort_order), is_active: form.is_active,
+    description: form.description.trim() || null, sort_order: Number(form.sort_order),
   }
+  const lifecycle = editing.value && category.value && form.status === category.value.status
+    && form.is_active !== category.value.is_active
+    ? { is_active: form.is_active }
+    : form.status === null ? { is_active: form.is_active } : { status: form.status }
+  const payload: AdminCategoryMutation = { ...fields, ...lifecycle }
   if (imageAction.value === 'replace' && imageValue.value?.upload_token) payload.image_upload_token = imageValue.value.upload_token
   else if (imageAction.value === 'remove') payload.image_url = null
   saving.value = true
   try {
-    const saved = editing.value ? await updateAdminCategory(id.value, payload) : await createAdminCategory(payload)
+    const createPayload: AdminCategoryCreateRequest = {
+      ...payload,
+      ...(form.is_featured ? { is_featured: true } : {}),
+      ...(existingChildIds.value.length ? { attach_existing_child_ids: [...existingChildIds.value] } : {}),
+      ...(newChildDrafts.value.length ? { new_children: newChildDrafts.value.map(child => ({ ...child })) } : {}),
+    }
+    const saved = editing.value ? await updateAdminCategory(id.value, payload) : await createAdminCategory(createPayload)
     await router.push(`/admin/categories/${saved.id}`)
   } catch (error) {
     if (isApplicationError(error)) {

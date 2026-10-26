@@ -16,7 +16,7 @@ vi.mock('@/api/adminApi', async original => ({ ...(await original()), ...mocks }
 function category(id: number, overrides: Partial<AdminCategoryRecord> = {}): AdminCategoryRecord {
   return {
     id, parent_id: null, name: `Danh mục ${id}`, slug: `danh-muc-${id}`, description: null,
-    image_url: null, image_rendition_url: null, sort_order: 0, is_active: true,
+    image_url: null, image_rendition_url: null, sort_order: 0, status: 'published', is_active: true, is_featured: false,
     parent: null, children_count: 0, has_children: false, product_count: 0,
     ancestors: [], depth: 0, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
     ...overrides,
@@ -121,6 +121,18 @@ describe('Admin Categories V2 detail and mutations', () => {
     expect(payload).not.toHaveProperty('image_url')
     expect(payload).not.toHaveProperty('image_upload_token')
     expect(router.currentRoute.value.path).toBe('/admin/categories/5')
+  })
+
+  it('preserves a draft status and featured flag when editing unrelated fields', async () => {
+    mocks.getAdminCategory.mockResolvedValue(category(5, { status: 'draft', is_active: false, is_featured: true }))
+    const { wrapper } = await mountAt('/admin/categories/5/edit', AdminCategoryEditorPage)
+    await wrapper.get('input[name="name"]').setValue('Bản nháp đã sửa')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const payload = mocks.updateAdminCategory.mock.calls[0]?.[1]
+    expect(payload).toMatchObject({ name: 'Bản nháp đã sửa', status: 'draft' })
+    expect(payload).not.toHaveProperty('is_active')
+    expect(payload).not.toHaveProperty('is_featured')
   })
 
   it('surfaces backend cycle rejection and excludes self from parent options', async () => {

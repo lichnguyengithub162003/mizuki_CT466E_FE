@@ -1,8 +1,10 @@
 import type { AxiosResponse } from 'axios'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '@/api/clients'
-import { getAdminCategories } from '@/api/adminApi'
-import type { AdminCategoryListParams } from '@/types/adminCategory'
+import { createAdminCategory, getAdminCategories, updateAdminCategory } from '@/api/adminApi'
+import type { AdminCategoryChildCreateRequest, AdminCategoryCreateRequest, AdminCategoryListParams, AdminCategoryMutation } from '@/types/adminCategory'
+
+vi.mock('@/api/csrf', () => ({ ensureCsrfCookie: vi.fn().mockResolvedValue(undefined) }))
 
 const pagination = { current_page: 1, last_page: 1, per_page: 30, total: 0 }
 
@@ -16,6 +18,18 @@ async function serializedQuery(params: AdminCategoryListParams): Promise<URLSear
 }
 
 afterEach(() => vi.restoreAllMocks())
+
+const legacyCreate: AdminCategoryCreateRequest = {
+  name: 'Hoa mới', slug: 'hoa-moi', parent_id: null, description: null,
+  sort_order: 0, is_active: true,
+}
+
+async function submittedCreate(payload: AdminCategoryCreateRequest): Promise<Record<string, unknown>> {
+  const request = vi.spyOn(apiClient, 'request').mockResolvedValue({ data: { data: { id: 50 } } } as AxiosResponse)
+  await createAdminCategory(payload)
+  expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: 'post' }))
+  return request.mock.lastCall![0].data as Record<string, unknown>
+}
 
 describe('Admin Categories listing HTTP transport', () => {
   const base = { mode: 'flat', page: 1, per_page: 30, sort: 'sort_order', direction: 'asc' } as const
@@ -51,5 +65,63 @@ describe('Admin Categories listing HTTP transport', () => {
     expect(query.has('is_active')).toBe(false)
     expect(query.has('has_children')).toBe(false)
     expect(Object.fromEntries(query)).toEqual({ mode: 'root', page: '1', per_page: '30', sort: 'sort_order', direction: 'asc' })
+  })
+})
+
+describe('Admin Categories mutation HTTP transport', () => {
+  it('keeps legacy single-category creation compatible', async () => {
+    expect(await submittedCreate(legacyCreate)).toEqual(legacyCreate)
+  })
+
+  it('sends one atomic create request with only supported direct-child fields', async () => {
+    const child = {
+      name: 'Lan', slug: 'lan', description: null, sort_order: 2,
+      status: 'draft', is_featured: true, image_upload_token: 'child-token',
+      parent_id: 99, new_children: [{ name: 'Unsupported grandchild' }],
+    } as unknown as AdminCategoryChildCreateRequest
+    const data = await submittedCreate({
+      ...legacyCreate, status: 'published', is_active: undefined,
+      is_featured: false, image_upload_token: 'root-token',
+      attach_existing_child_ids: [2, 3], new_children: [child],
+    } as AdminCategoryCreateRequest)
+    expect(data).toEqual({
+      name: 'Hoa mới', slug: 'hoa-moi', parent_id: null, description: null, sort_order: 0,
+      status: 'published', is_featured: false, image_upload_token: 'root-token',
+      attach_existing_child_ids: [2, 3],
+      new_children: [{
+        name: 'Lan', slug: 'lan', description: null, sort_order: 2,
+        status: 'draft', is_featured: true, image_upload_token: 'child-token',
+      }],
+    })
+    expect(data).not.toHaveProperty('is_active')
+  })
+
+  it('never forwards conflicting legacy is_active alongside an explicit status', async () => {
+    const data = await submittedCreate({ ...legacyCreate, status: 'hidden', is_active: true } as unknown as AdminCategoryCreateRequest)
+    expect(data.status).toBe('hidden')
+    expect(data).not.toHaveProperty('is_active')
+  })
+
+  it('passes Laravel nested validation errors through without remapping their keys', async () => {
+    const error = {
+      name: 'ApplicationError', kind: 'validation', message: 'Dữ liệu không hợp lệ',
+      validationErrors: {
+        'attach_existing_child_ids.0': ['Danh mục con không hợp lệ.'],
+        'new_children.0.name': ['Tên là bắt buộc.'],
+        'new_children.0.slug': ['Slug đã tồn tại.'],
+        'new_children.0.image_upload_token': ['Ảnh không hợp lệ.'],
+        parent_id: ['Danh mục cha không hợp lệ.'],
+        status: ['Trạng thái không hợp lệ.'],
+      },
+    }
+    vi.spyOn(apiClient, 'request').mockRejectedValue(error)
+    await expect(createAdminCategory(legacyCreate)).rejects.toBe(error)
+  })
+
+  it('leaves edit mutation payload and PATCH transport unchanged', async () => {
+    const request = vi.spyOn(apiClient, 'request').mockResolvedValue({ data: { data: { id: 5 } } } as AxiosResponse)
+    const payload: AdminCategoryMutation = { ...legacyCreate, image_url: null }
+    await updateAdminCategory(5, payload)
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: 'patch', data: payload }))
   })
 })
