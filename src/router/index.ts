@@ -34,6 +34,26 @@ const routes: readonly RouteRecordRaw[] = [
         name: 'admin-orders',
         component: () => import('@/pages/admin/AdminOrdersListPage.vue'),
       },
+      {
+        path: 'categories',
+        name: 'admin-categories',
+        component: () => import('@/pages/admin/AdminCategoriesListPage.vue'),
+      },
+      {
+        path: 'categories/create',
+        name: 'admin-category-create',
+        component: () => import('@/pages/admin/AdminCategoryEditorPage.vue'),
+      },
+      {
+        path: 'categories/:id/edit',
+        name: 'admin-category-edit',
+        component: () => import('@/pages/admin/AdminCategoryEditorPage.vue'),
+      },
+      {
+        path: 'categories/:id',
+        name: 'admin-category-detail',
+        component: () => import('@/pages/admin/AdminCategoryDetailPage.vue'),
+      },
       { path: 'refunds', name: 'admin-refunds', component: () => import('@/pages/admin/AdminRefundsListPage.vue') },
       {
         path: 'branches',

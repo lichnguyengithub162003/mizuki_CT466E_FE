@@ -2,6 +2,7 @@ import { apiClient } from "@/api/clients";
 import { ensureCsrfCookie } from "@/api/csrf";
 import { ENDPOINTS } from "@/constants/endpoints";
 import type { ApiResponse } from "@/types/api";
+import type { AdminCategoryListParams, AdminCategoryMutation, AdminCategoryPage, AdminCategoryRecord, AdminCategoryPagination } from "@/types/adminCategory";
 import type {
   AdminListParams,
   AdminModule,
@@ -93,6 +94,37 @@ export async function getAdminList<T extends AdminRecord>(
       last_page: meta?.last_page ?? 1,
     },
   };
+}
+
+/** Categories V2 has a hierarchical, independently paginated listing contract. */
+export async function getAdminCategories(params: AdminCategoryListParams): Promise<AdminCategoryPage> {
+  const queryParams = {
+    ...params,
+    ...(params.is_active !== undefined ? { is_active: Number(params.is_active) } : {}),
+    ...(params.has_children !== undefined ? { has_children: Number(params.has_children) } : {}),
+  };
+  const response = await apiClient.get<ApiResponse<AdminCategoryRecord[]> & { meta: { pagination: AdminCategoryPagination } }>(
+    ENDPOINTS.adminCategories,
+    { params: queryParams },
+  );
+  const pagination = response.data.meta?.pagination;
+  if (!pagination || !Number.isFinite(pagination.current_page) || !Number.isFinite(pagination.last_page)) {
+    throw new Error("Category pagination metadata is missing");
+  }
+  return { items: response.data.data, pagination };
+}
+
+export async function getAdminCategory(id: number | string): Promise<AdminCategoryRecord> {
+  const response = await apiClient.get<ApiResponse<AdminCategoryRecord>>(ENDPOINTS.adminCategory(id));
+  return response.data.data;
+}
+
+export function createAdminCategory(payload: AdminCategoryMutation): Promise<AdminCategoryRecord> {
+  return mutate<AdminCategoryRecord>('post', ENDPOINTS.adminCategories, payload);
+}
+
+export function updateAdminCategory(id: number | string, payload: AdminCategoryMutation): Promise<AdminCategoryRecord> {
+  return mutate<AdminCategoryRecord>('patch', ENDPOINTS.adminCategory(id), payload);
 }
 
 export async function getAdminDetail<T extends AdminRecord>(

@@ -20,7 +20,7 @@ const slots = defineSlots<{
 const route = useRoute()
 const collapsed = ref(false)
 const drawer = ref(false)
-const isTableWorkspace = computed(() => ['/admin/orders', '/admin/refunds'].includes(route.path))
+const isTableWorkspace = computed(() => ['/admin/orders', '/admin/refunds', '/admin/categories'].includes(route.path))
 const activeKey = computed<AdminNavigationKey | null>(() =>
   ADMIN_NAVIGATION_ITEMS.find(
     (item) => route.path === item.to || route.path.startsWith(`${item.to}/`),
