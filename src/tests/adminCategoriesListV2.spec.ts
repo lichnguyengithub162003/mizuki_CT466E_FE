@@ -32,7 +32,8 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-async function mountPage() {
+async function mountPage(role: 'super_admin' | 'branch_manager' = 'super_admin') {
+  useAuthStore(pinia).$patch({ user: { id: 2, name: 'QA', email: 'qa@example.test', phone: null, avatar: null, role, role_label: role, branch_id: null, email_verified_at: null, created_at: '' }, isInitialized: true })
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/admin/categories', component: AdminCategoriesListPage },
     { path: '/admin/categories/create', component: { template: '<div />' } },
@@ -228,7 +229,11 @@ describe('Admin Categories V2 table controls', () => {
     })
     mocks.getAdminCategories.mockImplementation(async (params: { mode: string }) => page(params.mode === 'flat' ? [deep] : [category(1)]))
     const wrapper = await mountPage()
+    expect(wrapper.get('[data-testid="categories-search"]').attributes('type')).toBe('text')
+    expect(wrapper.get('[data-testid="categories-search"]').attributes('role')).toBe('searchbox')
+    expect(wrapper.find('[aria-label="Xóa tìm kiếm"]').exists()).toBe(false)
     await wrapper.get('[data-testid="categories-search"]').setValue('Lan rừng')
+    expect(wrapper.findAll('[aria-label="Xóa tìm kiếm"]')).toHaveLength(1)
     await new Promise(resolve => setTimeout(resolve, 350))
     await flushPromises()
     expect(mocks.getAdminCategories).toHaveBeenLastCalledWith({ mode: 'flat', search: 'Lan rừng', page: 1, per_page: 30, ...defaultOrder })
@@ -241,6 +246,8 @@ describe('Admin Categories V2 table controls', () => {
     expect(mocks.getAdminCategories).toHaveBeenLastCalledWith({ mode: 'flat', search: 'lan-rung', page: 1, per_page: 30, ...defaultOrder })
     await wrapper.get('[aria-label="Xóa tìm kiếm"]').trigger('click')
     await flushPromises()
+    expect((wrapper.get('[data-testid="categories-search"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[aria-label="Xóa tìm kiếm"]').exists()).toBe(false)
     expect(mocks.getAdminCategories).toHaveBeenLastCalledWith({ mode: 'root', page: 1, per_page: 30, ...defaultOrder })
   })
 
@@ -450,5 +457,10 @@ describe('Admin Categories V2 navigation', () => {
     await wrapper.get('[data-testid="category-create"]').trigger('click')
     await flushPromises()
     expect(wrapper.router.currentRoute.value.path).toBe('/admin/categories/create')
+  })
+  it('hides the create action from a Branch Manager while retaining read access', async () => {
+    const wrapper = await mountPage('branch_manager')
+    expect(wrapper.find('[data-testid="category-create"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="categories-toolbar"]').exists()).toBe(true)
   })
 })

@@ -4,9 +4,11 @@ import { RouterLink, useRoute } from 'vue-router'
 import { ArrowLeft, FolderTree, Image as ImageIcon, Pencil, RefreshCw } from '@lucide/vue'
 import BaseSkeleton from '@/components/common/BaseSkeleton.vue'
 import { getAdminCategory } from '@/api/adminApi'
+import { useAuthStore } from '@/stores/auth'
 import type { AdminCategoryRecord } from '@/types/adminCategory'
 
 const route = useRoute()
+const auth = useAuthStore()
 const category = ref<AdminCategoryRecord | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -52,7 +54,7 @@ onBeforeUnmount(() => { request += 1 })
         <div class="flex flex-col gap-5 sm:flex-row sm:items-start">
           <div class="grid size-28 shrink-0 place-items-center overflow-hidden rounded-2xl bg-primary-50 text-primary-700" data-testid="category-detail-image"><img v-if="imageUrl" :src="imageUrl" :alt="`Ảnh danh mục ${category.name}`" class="size-full object-cover" @error="failedImages.push(imageUrl)"><ImageIcon v-else class="size-7" aria-label="Danh mục chưa có ảnh hoặc ảnh không tải được" /></div>
           <div class="min-w-0 flex-1"><p class="text-[0.75rem] font-medium text-primary-700">Danh mục sản phẩm</p><h1 class="mt-1 break-words text-2xl font-semibold tracking-tight text-primary-950">{{ category.name }}</h1><p class="mt-1 break-all text-[0.8125rem] text-muted-foreground">{{ category.slug }}</p><p class="mt-3 text-[0.8125rem] text-muted-foreground" :title="hierarchy">{{ hierarchy }}</p><span class="mt-3 inline-flex items-center gap-2 rounded-full bg-surface-subtle px-3 py-1 text-[0.75rem]"><span :class="['size-2 rounded-full', category.is_active ? 'bg-emerald-600' : 'bg-slate-400']" />{{ category.is_active ? 'Đang hoạt động' : 'Tạm ẩn' }}</span></div>
-          <RouterLink :to="`/admin/categories/${category.id}/edit`" class="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-800 px-4 text-[0.8125rem] font-semibold text-white hover:bg-primary-900"><Pencil class="size-4" />Chỉnh sửa</RouterLink>
+          <RouterLink v-if="auth.role === 'super_admin'" :to="`/admin/categories/${category.id}/edit`" class="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary-800 px-4 text-[0.8125rem] font-semibold text-white hover:bg-primary-900"><Pencil class="size-4" />Chỉnh sửa</RouterLink>
         </div>
       </header>
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,1fr)]">

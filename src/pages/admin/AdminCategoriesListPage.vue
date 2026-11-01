@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Columns3, FolderTree, Image as ImageIcon, Pl
 import BaseSkeleton from '@/components/common/BaseSkeleton.vue'
 import BasePopover from '@/components/common/BasePopover.vue'
 import { getAdminCategories } from '@/api/adminApi'
+import { useAuthStore } from '@/stores/auth'
 import type { AdminCategoryListParams, AdminCategoryPage, AdminCategoryRecord } from '@/types/adminCategory'
 
 interface SiblingGroup {
@@ -23,6 +24,7 @@ type VisibleRow =
 const PAGE_SIZE = 30
 const ROOT = 'root'
 const router = useRouter()
+const auth = useAuthStore()
 type SortKey = NonNullable<AdminCategoryListParams['sort']>
 type ColumnKey = 'parent' | 'children' | 'products' | 'order' | 'status' | 'slug'
 type BooleanChoice = '' | 'true' | 'false'
@@ -223,12 +225,12 @@ onBeforeUnmount(() => { disposed = true; window.clearTimeout(searchTimer); reque
   <section class="categories-v2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" aria-label="Quản lý danh mục" data-testid="admin-categories-page">
     <div class="categories-shell mb-3 shrink-0 p-2 shadow-xs ring-1 ring-black/[0.035]" data-testid="categories-toolbar">
       <div class="flex flex-wrap items-center gap-2">
-        <label class="relative min-w-[14rem] flex-[1_1_20rem]">
-          <span class="sr-only">Tìm danh mục theo tên hoặc slug</span>
+        <div class="relative min-w-[14rem] flex-[1_1_20rem]">
+          <label for="categories-search-input" class="sr-only">Tìm danh mục theo tên hoặc slug</label>
           <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <input v-model="searchInput" type="search" placeholder="Tìm theo tên hoặc slug" class="categories-control w-full pl-9 pr-9" data-testid="categories-search">
+          <input id="categories-search-input" v-model="searchInput" type="text" role="searchbox" inputmode="search" placeholder="Tìm theo tên hoặc slug" class="categories-control w-full pl-9 pr-9" data-testid="categories-search">
           <button v-if="searchInput" type="button" aria-label="Xóa tìm kiếm" class="absolute right-2 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-primary-50" @click="clearSearch"><X class="size-3.5" /></button>
-        </label>
+        </div>
         <BasePopover v-model="filtersOpen" align="end" class="w-64 p-3">
           <template #trigger><button type="button" class="categories-control categories-trigger" :aria-expanded="filtersOpen" data-testid="categories-filter-trigger"><SlidersHorizontal class="size-4" /> Bộ lọc <span v-if="activeFilters" class="rounded-full bg-primary-100 px-1.5 text-[0.6875rem]">{{ activeFilters }}</span></button></template>
           <div class="space-y-3">
@@ -245,7 +247,7 @@ onBeforeUnmount(() => { disposed = true; window.clearTimeout(searchTimer); reque
           <template #trigger><button type="button" class="categories-control categories-trigger" :aria-expanded="columnsOpen" data-testid="categories-columns-trigger"><Columns3 class="size-4" /> Ẩn/hiện cột</button></template>
           <div><p class="px-2 py-1 text-[0.6875rem] font-medium uppercase tracking-wider text-muted-foreground">Tùy chỉnh bảng</p><label v-for="column in columnOptions" :key="column.key" class="categories-option"><input type="checkbox" :checked="columnVisible(column.key)" :data-testid="`category-column-${column.key}`" class="accent-primary-700" @change="toggleColumn(column.key)">{{ column.label }}</label><p class="mt-1 border-t border-border/60 px-2 pt-2 text-[0.6875rem] text-muted-foreground">Cột Danh mục luôn hiển thị</p></div>
         </BasePopover>
-        <button type="button" class="categories-create ml-auto" data-testid="category-create" @click="router.push('/admin/categories/create')"><Plus class="size-4" aria-hidden="true" />Thêm danh mục</button>
+        <button v-if="auth.role === 'super_admin'" type="button" class="categories-create ml-auto" data-testid="category-create" @click="router.push('/admin/categories/create')"><Plus class="size-4" aria-hidden="true" />Thêm danh mục</button>
       </div>
       <p v-if="flatMode" class="px-1 pt-2 text-[0.75rem] text-muted-foreground">Kết quả toàn bộ cấp · hiển thị dạng danh sách, không phải cây danh mục đầy đủ.</p>
     </div>
