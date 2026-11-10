@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import axios from 'axios'
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), request: vi.fn(), csrf: vi.fn() }))
 vi.mock('@/api/clients', () => ({ apiClient: { get: mocks.get, post: mocks.post, request: mocks.request } }))
 vi.mock('@/api/csrf', () => ({ ensureCsrfCookie: mocks.csrf }))
 
-import { adjustInventory, createAdminRecord, deleteAdminCatalog, getAdminDetail, getAdminList, getAdminOrderCounts, getAdminRefundCounts, runAppointmentAction, runOrderAction, runRefundAction, updateAdminRecord, uploadAdminImage } from '@/api/adminApi'
+import { adjustInventory, createAdminRecord, deleteAdminCatalog, deleteAdminCategory, getAdminCategoryProducts, getAdminCategoryTrash, getAdminDetail, getAdminList, getAdminOrderCounts, getAdminRefundCounts, reassignAdminProductCategory, restoreAdminCategory, runAppointmentAction, runOrderAction, runRefundAction, updateAdminRecord, uploadAdminImage } from '@/api/adminApi'
 
 describe('admin API contracts', () => {
   beforeEach(() => {
@@ -44,6 +45,42 @@ describe('admin API contracts', () => {
     expect(mocks.get).toHaveBeenLastCalledWith('/admin/products', { params: { search: 'serum', category_id: 2 } })
     await getAdminList('reviews', { keyword: 'dịu nhẹ', status: 'hidden' })
     expect(mocks.get).toHaveBeenLastCalledWith('/admin/reviews', { params: { search: 'dịu nhẹ', visibility: 'hidden' } })
+  })
+
+  it('sends the exact direct/tree Category Product list contract and reads pagination', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [], meta: { pagination: { current_page: 2, per_page: 15, total: 24, last_page: 2 } } } })
+    const params = { category_id: 5, category_scope: 'tree' as const, search: 'Hoa', sort: 'name' as const, page: 2, per_page: 15 }
+    await expect(getAdminCategoryProducts(params)).resolves.toEqual({ items: [], pagination: { current_page: 2, per_page: 15, total: 24, last_page: 2 } })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/products', { params })
+  })
+
+  it.each(['', '   ', '\t  '])('omits empty Product search from the actual Axios URL (%j)', async search => {
+    mocks.get.mockResolvedValue({ data: { data: [], meta: { pagination: { current_page: 1, per_page: 15, total: 0, last_page: 1 } } } })
+    await getAdminCategoryProducts({ category_id: 82, category_scope: 'direct', search, sort: 'newest', page: 1, per_page: 15 })
+    const [path, config] = mocks.get.mock.lastCall!
+    const url = new URL(axios.getUri({ url: path, ...config }), 'http://localhost')
+    expect(url.pathname).toBe('/admin/products')
+    expect(url.searchParams.has('search')).toBe(false)
+    expect(Object.fromEntries(url.searchParams)).toEqual({ category_id: '82', category_scope: 'direct', sort: 'newest', page: '1', per_page: '15' })
+  })
+
+  it('trims Vietnamese Product search and preserves Axios URL encoding and other filters', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [{ id: 9, name: 'Dưỡng ẩm' }], meta: { pagination: { current_page: 2, per_page: 15, total: 16, last_page: 2 } } } })
+    const response = await getAdminCategoryProducts({ category_id: 82, category_scope: 'tree', search: '  dưỡng ẩm  ', sort: 'name', page: 2, per_page: 15 })
+    expect(response.items).toEqual([{ id: 9, name: 'Dưỡng ẩm' }])
+    expect(response.pagination.total).toBe(16)
+    const [path, config] = mocks.get.mock.lastCall!
+    const serialized = axios.getUri({ url: path, ...config })
+    const url = new URL(serialized, 'http://localhost')
+    expect(serialized).toContain('%C6%B0')
+    expect(url.searchParams.get('search')).toBe('dưỡng ẩm')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ category_id: '82', category_scope: 'tree', sort: 'name', page: '2', per_page: '15', search: 'dưỡng ẩm' })
+  })
+
+  it.each([401, 403, 422, 500])('propagates Product list HTTP %i without inventing data', async status => {
+    const failure = { status, message: 'private server response' }
+    mocks.get.mockRejectedValue(failure)
+    await expect(getAdminCategoryProducts({ category_id: 82, category_scope: 'direct', search: '', sort: 'newest', page: 1, per_page: 15 })).rejects.toBe(failure)
   })
 
   it('does not send unsupported delivery or payment filters to the order endpoint', async () => {
@@ -101,6 +138,39 @@ describe('admin API contracts', () => {
     expect(mocks.request).toHaveBeenNthCalledWith(1, { method: 'post', url: '/admin/customers', data: { name: 'Khách QA', email: 'customer@example.test' } })
     expect(mocks.request).toHaveBeenNthCalledWith(2, { method: 'patch', url: '/admin/customers/5', data: { phone: '0900000000' } })
     expect(mocks.csrf).toHaveBeenCalledTimes(2)
+  })
+
+  it('sends a category-only Product reassignment PATCH without unrelated fields', async () => {
+    mocks.request.mockResolvedValueOnce({ data: { data: { id: 9, category: { id: 6, name: 'Danh mục 6', slug: 'danh-muc-6' } } } })
+    await expect(reassignAdminProductCategory(9, 6)).resolves.toMatchObject({ id: 9, category: { id: 6 } })
+    expect(mocks.request).toHaveBeenCalledTimes(1)
+    expect(mocks.request).toHaveBeenCalledWith({ method: 'patch', url: '/admin/products/9', data: { category_id: 6 } })
+    expect(mocks.csrf).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends Category soft delete to the exact admin endpoint without a payload', async () => {
+    await expect(deleteAdminCategory(8)).resolves.toEqual({ id: 1 })
+    expect(mocks.csrf).toHaveBeenCalledTimes(1)
+    expect(mocks.request).toHaveBeenCalledTimes(1)
+    expect(mocks.request).toHaveBeenCalledWith({ method: 'delete', url: '/admin/categories/8', data: undefined })
+  })
+
+  it('loads Category Trash using the exact paginated API envelope and omits empty search', async () => {
+    const pagination = { current_page: 2, per_page: 20, total: 21, last_page: 2 }
+    const item = { id: 8, name: 'Hoa', deleted_at: '2026-11-01T00:00:00Z', delete_snapshot_captured: true }
+    mocks.get.mockResolvedValue({ data: { data: [item], meta: { pagination } } })
+    await expect(getAdminCategoryTrash({ search: '   ', page: 2, per_page: 20 })).resolves.toEqual({ items: [item], pagination })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/categories/trash', { params: { page: 2, per_page: 20 } })
+    const [path, config] = mocks.get.mock.lastCall!
+    expect(new URL(axios.getUri({ url: path, ...config }), 'http://localhost').searchParams.has('search')).toBe(false)
+    await getAdminCategoryTrash({ search: '  hoa lan  ', page: 1, per_page: 20 })
+    expect(mocks.get).toHaveBeenLastCalledWith('/admin/categories/trash', { params: { page: 1, per_page: 20, search: 'hoa lan' } })
+  })
+
+  it('posts Category Restore to the exact ID path without a payload', async () => {
+    await expect(restoreAdminCategory(8)).resolves.toEqual({ id: 1 })
+    expect(mocks.csrf).toHaveBeenCalledTimes(1)
+    expect(mocks.request).toHaveBeenCalledWith({ method: 'post', url: '/admin/categories/8/restore', data: undefined })
   })
 
   it('only exposes dependency-safe catalog delete endpoints', async () => {

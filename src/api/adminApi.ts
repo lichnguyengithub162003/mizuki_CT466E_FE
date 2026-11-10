@@ -5,6 +5,10 @@ import type { ApiResponse } from "@/types/api";
 import type { AdminCategoryCreateRequest, AdminCategoryListParams, AdminCategoryMutation, AdminCategoryPage, AdminCategoryRecord, AdminCategoryPagination } from "@/types/adminCategory";
 import type {
   AdminListParams,
+  AdminCategoryProduct,
+  AdminCategoryProductParams,
+  AdminCategoryTrashRecord,
+  AdminProductCategoryReassignment,
   AdminModule,
   AdminOrderCounts,
   AdminPage,
@@ -96,6 +100,26 @@ export async function getAdminList<T extends AdminRecord>(
   };
 }
 
+export async function getAdminCategoryProducts(
+  params: AdminCategoryProductParams,
+): Promise<AdminPage<AdminCategoryProduct>> {
+  const { search, ...filters } = params;
+  const keyword = search.trim();
+  const queryParams = { ...filters, ...(keyword ? { search: keyword } : {}) };
+  const response = await apiClient.get<ApiResponse<AdminCategoryProduct[]> & {
+    meta: { pagination: AdminPage<AdminCategoryProduct>["pagination"] };
+  }>(ENDPOINTS.adminProducts, { params: queryParams });
+  const pagination = response.data.meta?.pagination;
+  if (!pagination || !Number.isFinite(pagination.current_page) || !Number.isFinite(pagination.last_page)) {
+    throw new Error("Product pagination metadata is missing");
+  }
+  return { items: response.data.data, pagination };
+}
+
+export function reassignAdminProductCategory(productId: number, categoryId: number): Promise<AdminProductCategoryReassignment> {
+  return mutate<AdminProductCategoryReassignment>('patch', ENDPOINTS.adminProduct(productId), { category_id: categoryId });
+}
+
 /** Categories V2 has a hierarchical, independently paginated listing contract. */
 export async function getAdminCategories(params: AdminCategoryListParams): Promise<AdminCategoryPage> {
   const queryParams = {
@@ -117,6 +141,23 @@ export async function getAdminCategories(params: AdminCategoryListParams): Promi
 export async function getAdminCategory(id: number | string): Promise<AdminCategoryRecord> {
   const response = await apiClient.get<ApiResponse<AdminCategoryRecord>>(ENDPOINTS.adminCategory(id));
   return response.data.data;
+}
+
+export async function getAdminCategoryTrash(params: { search?: string; page: number; per_page: number }): Promise<AdminPage<AdminCategoryTrashRecord>> {
+  const search = params.search?.trim();
+  const response = await apiClient.get<ApiResponse<AdminCategoryTrashRecord[]> & { meta: { pagination: AdminPage<AdminCategoryTrashRecord>["pagination"] } }>(
+    `${ENDPOINTS.adminCategories}/trash`,
+    { params: { page: params.page, per_page: params.per_page, ...(search ? { search } : {}) } },
+  );
+  const pagination = response.data.meta?.pagination;
+  if (!pagination || !Number.isFinite(pagination.current_page) || !Number.isFinite(pagination.last_page)) {
+    throw new Error("Category Trash pagination metadata is missing");
+  }
+  return { items: response.data.data, pagination };
+}
+
+export function restoreAdminCategory(id: number): Promise<unknown> {
+  return mutate<unknown>('post', `${ENDPOINTS.adminCategory(id)}/restore`);
 }
 
 export function createAdminCategory(payload: AdminCategoryCreateRequest): Promise<AdminCategoryRecord> {
@@ -149,6 +190,10 @@ export function createAdminCategory(payload: AdminCategoryCreateRequest): Promis
 
 export function updateAdminCategory(id: number | string, payload: AdminCategoryMutation): Promise<AdminCategoryRecord> {
   return mutate<AdminCategoryRecord>('patch', ENDPOINTS.adminCategory(id), payload);
+}
+
+export function deleteAdminCategory(id: number | string): Promise<unknown> {
+  return mutate<unknown>('delete', ENDPOINTS.adminCategory(id));
 }
 
 export async function getAdminDetail<T extends AdminRecord>(

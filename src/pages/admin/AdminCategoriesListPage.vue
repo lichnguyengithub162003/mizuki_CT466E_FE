@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronDown, ChevronRight, Columns3, FolderTree, Image as ImageIcon, Plus, RefreshCw, Search, SlidersHorizontal, X } from '@lucide/vue'
+import { ChevronDown, ChevronRight, Columns3, FolderTree, Image as ImageIcon, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from '@lucide/vue'
 import BaseSkeleton from '@/components/common/BaseSkeleton.vue'
 import BasePopover from '@/components/common/BasePopover.vue'
 import { getAdminCategories } from '@/api/adminApi'
@@ -247,7 +247,10 @@ onBeforeUnmount(() => { disposed = true; window.clearTimeout(searchTimer); reque
           <template #trigger><button type="button" class="categories-control categories-trigger" :aria-expanded="columnsOpen" data-testid="categories-columns-trigger"><Columns3 class="size-4" /> Ẩn/hiện cột</button></template>
           <div><p class="px-2 py-1 text-[0.6875rem] font-medium uppercase tracking-wider text-muted-foreground">Tùy chỉnh bảng</p><label v-for="column in columnOptions" :key="column.key" class="categories-option"><input type="checkbox" :checked="columnVisible(column.key)" :data-testid="`category-column-${column.key}`" class="accent-primary-700" @change="toggleColumn(column.key)">{{ column.label }}</label><p class="mt-1 border-t border-border/60 px-2 pt-2 text-[0.6875rem] text-muted-foreground">Cột Danh mục luôn hiển thị</p></div>
         </BasePopover>
-        <button v-if="auth.role === 'super_admin'" type="button" class="categories-create ml-auto" data-testid="category-create" @click="router.push('/admin/categories/create')"><Plus class="size-4" aria-hidden="true" />Thêm danh mục</button>
+        <div v-if="auth.role === 'super_admin'" class="ml-auto flex flex-wrap items-center gap-2">
+          <button type="button" class="categories-control categories-trigger text-primary-700 hover:text-primary-900" data-testid="category-trash-entry" @click="router.push({ name: 'admin-categories-trash' })"><Trash2 class="size-4" aria-hidden="true" />Thùng rác</button>
+          <button type="button" class="categories-create" data-testid="category-create" @click="router.push('/admin/categories/create')"><Plus class="size-4" aria-hidden="true" />Thêm danh mục</button>
+        </div>
       </div>
       <p v-if="flatMode" class="px-1 pt-2 text-[0.75rem] text-muted-foreground">Kết quả toàn bộ cấp · hiển thị dạng danh sách, không phải cây danh mục đầy đủ.</p>
     </div>

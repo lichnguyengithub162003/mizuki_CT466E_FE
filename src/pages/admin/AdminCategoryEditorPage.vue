@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { RouterLink, onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ChevronDown, FolderTree, LoaderCircle, Plus, Search, Trash2, X } from '@lucide/vue'
 import AdminImagePicker from '@/components/admin/AdminImagePicker.vue'
 import BaseSkeleton from '@/components/common/BaseSkeleton.vue'
@@ -10,10 +10,12 @@ import type { AdminCategoryChildCreateRequest, AdminCategoryCreateRequest, Admin
 
 type ImageValue = { image_url?: string | null; upload_token?: string | null; preview_url?: string | null }
 type ImageAction = 'keep' | 'replace' | 'remove'
+const props = withDefaults(defineProps<{ embedded?: boolean; categoryId?: number | string; initialCategory?: AdminCategoryRecord }>(), { embedded: false })
+const emit = defineEmits<{ saved: [category: AdminCategoryRecord]; 'dirty-change': [dirty: boolean] }>()
 const route = useRoute()
 const router = useRouter()
-const editing = computed(() => route.name === 'admin-category-edit')
-const id = computed(() => String(route.params.id ?? ''))
+const editing = computed(() => props.embedded || route.name === 'admin-category-edit')
+const id = computed(() => String(props.embedded ? props.categoryId ?? '' : route.params.id ?? ''))
 const category = ref<AdminCategoryRecord | null>(null)
 const loading = ref(false)
 const loadError = ref('')
@@ -35,6 +37,7 @@ const childSlugEdited = reactive<Record<number, boolean>>({})
 const slugEdited = ref(false)
 const draftDirty = ref(false)
 const savedSuccessfully = ref(false)
+const initialEditSnapshot = ref('')
 const rootPickerVersion = ref(0)
 const selectedParentDepth = ref<number | null>(null)
 const selectedParentAncestors = ref<number[]>([])
@@ -68,6 +71,15 @@ let nextChildKey = 0
 const createLevel = computed(() => form.parent_id === null ? 1 : (selectedParentDepth.value ?? 0) + 2)
 const canHaveChildren = computed(() => createLevel.value < 3)
 const anyChildImagePending = computed(() => Object.values(childImagePending).some(Boolean))
+const editSnapshot = computed(() => JSON.stringify({
+  name: form.name, slug: form.slug, parent_id: form.parent_id, description: form.description,
+  sort_order: form.sort_order, status: form.status, is_featured: form.is_featured,
+  imageAction: imageAction.value, uploadToken: imageAction.value === 'replace' ? imageValue.value?.upload_token : null,
+}))
+const hasUnsavedChanges = computed(() => editing.value
+  ? !savedSuccessfully.value && (imagePending.value || (initialEditSnapshot.value !== '' && editSnapshot.value !== initialEditSnapshot.value))
+  : draftDirty.value && !savedSuccessfully.value)
+watch(hasUnsavedChanges, dirty => emit('dirty-change', dirty), { immediate: true })
 const attachmentErrors = computed(() => Object.entries(errors)
   .filter(([field]) => field === 'attach_existing_child_ids' || field.startsWith('attach_existing_child_ids.'))
   .map(([, message]) => message))
@@ -106,6 +118,7 @@ function resetForm(): void {
   slugEdited.value = false
   draftDirty.value = false
   savedSuccessfully.value = false
+  initialEditSnapshot.value = ''
   selectedParentDepth.value = null
   selectedParentAncestors.value = []
   childPickerOpen.value = false
@@ -139,16 +152,19 @@ async function loadDetail(): Promise<void> {
   if (!editing.value) { loading.value = false; return }
   loading.value = true
   try {
-    const result = await getAdminCategory(id.value)
+    const result = props.embedded && props.initialCategory?.id === Number(id.value)
+      ? props.initialCategory
+      : await getAdminCategory(id.value)
     if (version !== detailVersion) return
     category.value = result
     Object.assign(form, {
       name: result.name, slug: result.slug, parent_id: result.parent_id,
       description: result.description ?? '', sort_order: result.sort_order,
-      status: result.status ?? null, is_active: result.is_active, is_featured: result.is_featured ?? false,
+      status: result.status, is_active: result.is_active, is_featured: result.is_featured ?? false,
     })
     selectedParentName.value = result.parent?.name ?? (result.parent_id === null ? '' : 'Chưa xác định danh mục cha')
     imageValue.value = { image_url: result.image_rendition_url || result.image_url }
+    initialEditSnapshot.value = editSnapshot.value
   } catch {
     if (version === detailVersion) loadError.value = 'Không thể tải danh mục để chỉnh sửa. Vui lòng thử lại.'
   } finally {
@@ -189,11 +205,12 @@ onBeforeUnmount(() => {
   window.clearTimeout(parentTimer)
   window.clearTimeout(childTimer)
 })
-onBeforeRouteLeave(() => {
-  if (!editing.value && draftDirty.value && !savedSuccessfully.value) {
-    return window.confirm('Bạn có thay đổi chưa lưu. Rời trang và bỏ bản nháp?')
-  }
-})
+function confirmLeave(): boolean {
+  return props.embedded || !hasUnsavedChanges.value
+    || window.confirm('Bạn có thay đổi chưa lưu. Rời trang và bỏ bản nháp?')
+}
+onBeforeRouteLeave(confirmLeave)
+onBeforeRouteUpdate(confirmLeave)
 
 async function loadParents(page: number): Promise<void> {
   if (parentLoading.value || (page > 1 && page > parentLastPage.value)) return
@@ -326,7 +343,7 @@ function clearChildImage(key: number): void {
 }
 function clearRootImage(): void {
   imagePending.value = false
-  imageValue.value = null
+  imageValue.value = category.value ? { image_url: category.value.image_rendition_url || category.value.image_url } : null
   imageAction.value = 'keep'
   rootPickerVersion.value += 1
 }
@@ -349,8 +366,8 @@ async function submit(): Promise<void> {
   if (!form.name.trim()) errors.name = 'Vui lòng nhập tên danh mục.'
   if (!form.slug.trim()) errors.slug = 'Vui lòng nhập slug.'
   if (!Number.isInteger(Number(form.sort_order)) || Number(form.sort_order) < 0) errors.sort_order = 'Thứ tự phải là số nguyên không âm.'
+  if (!form.status) errors.status = 'Vui lòng chọn trạng thái.'
   if (!editing.value) {
-    if (!form.status) errors.status = 'Vui lòng chọn trạng thái.'
     if (!canHaveChildren.value && (existingChildIds.value.length || newChildDrafts.value.length)) {
       errors.new_children = 'Danh mục cấp 3 không thể có danh mục con. Hãy đổi danh mục cha hoặc bỏ các mục con đã nhập.'
     }
@@ -368,11 +385,8 @@ async function submit(): Promise<void> {
     name: form.name.trim(), slug: form.slug.trim(), parent_id: form.parent_id,
     description: form.description.trim() || null, sort_order: Number(form.sort_order),
   }
-  const lifecycle = editing.value && category.value && form.status === category.value.status
-    && form.is_active !== category.value.is_active
-    ? { is_active: form.is_active }
-    : form.status === null ? { is_active: form.is_active } : { status: form.status }
-  const payload: AdminCategoryMutation = { ...fields, ...lifecycle }
+  const payload: AdminCategoryMutation = { ...fields, status: form.status as AdminCategoryStatus }
+  if (editing.value) payload.is_featured = form.is_featured
   if (imageAction.value === 'replace' && imageValue.value?.upload_token) payload.image_upload_token = imageValue.value.upload_token
   else if (imageAction.value === 'remove') payload.image_url = null
   saving.value = true
@@ -384,8 +398,20 @@ async function submit(): Promise<void> {
       ...(newChildDrafts.value.length ? { new_children: newChildDrafts.value.map(child => ({ ...child })) } : {}),
     }
     const saved = editing.value ? await updateAdminCategory(id.value, payload) : await createAdminCategory(createPayload)
+    if (editing.value) {
+      category.value = saved
+      Object.assign(form, {
+        name: saved.name, slug: saved.slug, parent_id: saved.parent_id,
+        description: saved.description ?? '', sort_order: saved.sort_order,
+        status: saved.status, is_active: saved.is_active, is_featured: saved.is_featured,
+      })
+      imageValue.value = { image_url: saved.image_rendition_url || saved.image_url }
+      imageAction.value = 'keep'
+      initialEditSnapshot.value = editSnapshot.value
+    }
     savedSuccessfully.value = true
-    await router.push(`/admin/categories/${saved.id}`)
+    if (props.embedded) emit('saved', saved)
+    else await router.push(`/admin/categories/${saved.id}`)
   } catch (error) {
     if (isApplicationError(error) && error.kind === 'validation') {
       saveError.value = error.message
@@ -398,12 +424,12 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <section class="min-w-0 space-y-4" :aria-label="editing ? 'Chỉnh sửa danh mục' : 'Thêm danh mục'" data-testid="category-editor-page">
-    <RouterLink :to="editing ? `/admin/categories/${id}` : '/admin/categories'" class="inline-flex items-center gap-1.5 text-[0.8125rem] font-medium text-primary-700 hover:text-primary-900"><ArrowLeft class="size-4" />{{ editing ? 'Chi tiết danh mục' : 'Danh sách danh mục' }}</RouterLink>
+  <section :class="['min-w-0 space-y-4', embedded ? 'category-editor-embedded' : '']" :aria-label="editing ? 'Chỉnh sửa danh mục' : 'Thêm danh mục'" data-testid="category-editor-page">
+    <RouterLink v-if="!embedded" :to="editing ? `/admin/categories/${id}` : '/admin/categories'" class="inline-flex items-center gap-1.5 text-[0.8125rem] font-medium text-primary-700 hover:text-primary-900"><ArrowLeft class="size-4" />{{ editing ? 'Chi tiết danh mục' : 'Danh sách danh mục' }}</RouterLink>
     <div v-if="loading" class="rounded-2xl bg-surface p-6" role="status" aria-label="Đang tải danh mục"><BaseSkeleton class="h-12" /><BaseSkeleton class="mt-4 h-72" /></div>
     <div v-else-if="loadError" class="rounded-2xl bg-surface p-8 text-center" role="alert"><p>{{ loadError }}</p><button type="button" class="mt-3 font-medium text-primary-700" @click="loadDetail">Thử lại</button></div>
     <form v-else class="space-y-4" novalidate @submit.prevent="submit">
-      <header v-if="editing" class="rounded-2xl bg-surface p-5 shadow-xs ring-1 ring-black/[0.04] sm:p-6"><p class="text-[0.75rem] font-medium text-primary-700">Danh mục sản phẩm</p><h1 class="mt-1 text-xl font-semibold tracking-tight text-primary-950">Chỉnh sửa danh mục</h1><p class="mt-1 text-[0.8125rem] text-muted-foreground">Tên và slug được lưu đúng như bạn nhập.</p></header>
+      <header v-if="editing && !embedded" class="rounded-2xl bg-surface p-5 shadow-xs ring-1 ring-black/[0.04] sm:p-6"><p class="text-[0.75rem] font-medium text-primary-700">Danh mục sản phẩm</p><h1 class="mt-1 text-xl font-semibold tracking-tight text-primary-950">Chỉnh sửa danh mục</h1><p class="mt-1 text-[0.8125rem] text-muted-foreground">Tên và slug được lưu đúng như bạn nhập.</p></header>
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(17rem,1fr)]">
         <div class="space-y-4">
           <section class="rounded-2xl bg-surface p-5 shadow-xs ring-1 ring-black/[0.04] sm:p-6"><h2 class="font-semibold text-primary-950">Thông tin cơ bản</h2><div class="mt-4 grid gap-4">
@@ -471,18 +497,25 @@ async function submit(): Promise<void> {
         <div class="space-y-4">
           <section class="rounded-2xl bg-surface p-5 shadow-xs ring-1 ring-black/[0.04] sm:p-6"><h2 class="font-semibold text-primary-950">Ảnh đại diện danh mục</h2><div class="mt-4" @change.capture="onImageSelection"><AdminImagePicker :key="rootPickerVersion" :model-value="imageValue" label="Ảnh danh mục" :error="errors.image_upload_token || errors.image_url" @update:model-value="setImage" /></div><p v-if="imagePending" class="mt-2 text-[0.75rem] text-amber-800" role="status">Ảnh chưa sẵn sàng. Hãy đợi tải xong, chọn lại hoặc bỏ ảnh trước khi lưu. <button type="button" class="font-semibold underline" @click="clearRootImage">Bỏ ảnh đang chọn</button></p></section>
           <section class="rounded-2xl bg-surface p-5 shadow-xs ring-1 ring-black/[0.04] sm:p-6"><h2 class="font-semibold text-primary-950">{{ editing ? 'Hiển thị' : 'Xuất bản' }}</h2><div class="mt-4 grid gap-4">
-            <label v-if="!editing" class="category-field"><span>Trạng thái</span><select v-model="form.status" name="status" class="category-input" :aria-invalid="Boolean(errors.status)" @change="draftDirty = true"><option v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select><small v-if="errors.status" role="alert">{{ errors.status }}</small><small class="text-muted-foreground">{{ statusOptions.find(option => option.value === form.status)?.description }}</small></label>
-            <label v-if="!editing" class="flex items-center gap-2 text-[0.8125rem] font-medium"><input v-model="form.is_featured" type="checkbox" name="is_featured" class="size-4 accent-primary-700" @change="draftDirty = true">Danh mục nổi bật</label>
+            <label class="category-field"><span>Trạng thái</span><select v-model="form.status" name="status" class="category-input" :aria-invalid="Boolean(errors.status)" @change="draftDirty = true"><option v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select><small v-if="errors.status" role="alert">{{ errors.status }}</small><small class="text-muted-foreground">{{ statusOptions.find(option => option.value === form.status)?.description }}</small></label>
+            <label class="flex items-center gap-2 text-[0.8125rem] font-medium"><input v-model="form.is_featured" type="checkbox" name="is_featured" class="size-4 accent-primary-700" @change="draftDirty = true">Danh mục nổi bật</label>
             <label class="category-field"><span class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><span>Thứ tự sắp xếp</span><span class="text-[0.75rem] font-normal text-muted-foreground">Số nhỏ ưu tiên trước trong cùng cấp</span></span><input v-model.number="form.sort_order" name="sort_order" type="number" min="0" step="1" :aria-invalid="Boolean(errors.sort_order)" class="category-input" @input="draftDirty = true"><small v-if="errors.sort_order" role="alert">{{ errors.sort_order }}</small></label>
-            <label v-if="editing" class="flex items-center gap-2 text-[0.8125rem] font-medium"><input v-model="form.is_active" type="checkbox" name="is_active" class="size-4 accent-primary-700">Đang hoạt động</label><small v-if="editing && errors.is_active" role="alert" class="text-[0.75rem] text-red-700">{{ errors.is_active }}</small></div></section>
+            <small v-if="editing && errors.is_active" role="alert" class="text-[0.75rem] text-red-700">{{ errors.is_active }}</small></div></section>
         </div>
       </div>
-      <div class="flex flex-wrap items-center justify-end gap-3 rounded-2xl bg-surface p-4 shadow-xs ring-1 ring-black/[0.04]"><p v-if="saveError" class="min-w-0 basis-full break-words text-[0.8125rem] text-red-700 sm:mr-auto sm:basis-auto" role="alert">{{ saveError }}</p><RouterLink :to="editing ? `/admin/categories/${id}` : '/admin/categories'" class="category-secondary">Hủy</RouterLink><button type="submit" class="category-primary gap-2" :disabled="saving || imagePending || anyChildImagePending" :aria-busy="saving" data-testid="category-save"><LoaderCircle v-if="saving" class="size-4 animate-spin" aria-hidden="true" />{{ saving ? (editing ? 'Đang lưu…' : 'Đang tạo danh mục...') : editing ? 'Lưu thay đổi' : 'Tạo danh mục' }}</button></div>
+      <div :class="['flex flex-wrap items-center justify-end gap-3 bg-surface p-4', embedded ? 'sticky bottom-0 z-10 border-t border-border/60' : 'rounded-2xl shadow-xs ring-1 ring-black/[0.04]']"><p v-if="saveError" class="min-w-0 basis-full break-words text-[0.8125rem] text-red-700 sm:mr-auto sm:basis-auto" role="alert">{{ saveError }}</p><RouterLink v-if="!embedded" :to="editing ? `/admin/categories/${id}` : '/admin/categories'" class="category-secondary">Hủy</RouterLink><button type="submit" class="category-primary gap-2" :disabled="saving || imagePending || anyChildImagePending" :aria-busy="saving" data-testid="category-save"><LoaderCircle v-if="saving" class="size-4 animate-spin" aria-hidden="true" />{{ saving ? (editing ? 'Đang lưu…' : 'Đang tạo danh mục...') : editing ? 'Lưu thay đổi' : 'Tạo danh mục' }}</button></div>
     </form>
   </section>
 </template>
 
 <style scoped>
+.category-editor-embedded form > .grid section {
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  box-shadow: none;
+  padding: 1.25rem 0;
+}
 .category-field { display: grid; gap: .4rem; font-size: .8125rem; font-weight: 500; }
 .category-field small { color: #b42318; font-size: .75rem; }
 .category-input { min-height: 2.5rem; width: 100%; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); padding: .55rem .75rem; color: var(--foreground); font-size: .8125rem; font-weight: 400; outline: none; }

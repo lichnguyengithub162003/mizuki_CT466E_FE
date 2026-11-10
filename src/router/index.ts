@@ -40,6 +40,12 @@ const routes: readonly RouteRecordRaw[] = [
         component: () => import('@/pages/admin/AdminCategoriesListPage.vue'),
       },
       {
+        path: 'categories/trash',
+        name: 'admin-categories-trash',
+        component: () => import('@/pages/admin/AdminCategoriesTrashPage.vue'),
+        meta: { requiresSuperAdmin: true },
+      },
+      {
         path: 'categories/create',
         name: 'admin-category-create',
         component: () => import('@/pages/admin/AdminCategoryEditorPage.vue'),

@@ -36,6 +36,7 @@ async function mountPage(role: 'super_admin' | 'branch_manager' = 'super_admin')
   useAuthStore(pinia).$patch({ user: { id: 2, name: 'QA', email: 'qa@example.test', phone: null, avatar: null, role, role_label: role, branch_id: null, email_verified_at: null, created_at: '' }, isInitialized: true })
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/admin/categories', component: AdminCategoriesListPage },
+    { path: '/admin/categories/trash', name: 'admin-categories-trash', component: { template: '<div />' } },
     { path: '/admin/categories/create', component: { template: '<div />' } },
     { path: '/admin/categories/:id', component: { template: '<div />' } },
   ] })
@@ -457,6 +458,17 @@ describe('Admin Categories V2 navigation', () => {
     await wrapper.get('[data-testid="category-create"]').trigger('click')
     await flushPromises()
     expect(wrapper.router.currentRoute.value.path).toBe('/admin/categories/create')
+  })
+  it('shows a discreet Trash entry only to Super Admin and navigates to its route', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.get('[data-testid="category-trash-entry"]').text()).toContain('Thùng rác')
+    await wrapper.get('[data-testid="category-trash-entry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.router.currentRoute.value.path).toBe('/admin/categories/trash')
+    wrapper.unmount()
+    const manager = await mountPage('branch_manager')
+    expect(manager.find('[data-testid="category-trash-entry"]').exists()).toBe(false)
+    manager.unmount()
   })
   it('hides the create action from a Branch Manager while retaining read access', async () => {
     const wrapper = await mountPage('branch_manager')

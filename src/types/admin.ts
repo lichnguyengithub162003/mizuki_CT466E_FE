@@ -1,6 +1,49 @@
 import type { ApplicationError } from "@/types/errors";
+import type { AdminCategoryStatus } from "@/types/adminCategory";
 
 export type AdminRecord = Record<string, any> & { id: number };
+
+export interface AdminCategoryTrashRecord {
+  id: number;
+  parent_id: number | null;
+  name: string;
+  slug: string;
+  status: AdminCategoryStatus;
+  is_featured: boolean;
+  deleted_at: string | null;
+  deleted_from_parent_id: number | null;
+  delete_snapshot_captured: boolean;
+  original_parent?: { id: number; name: string; slug: string } | null;
+}
+
+export interface AdminCategoryProduct {
+  id: number;
+  name: string;
+  slug: string;
+  image_url: string | null;
+  primary_image_thumb_url: string | null;
+  category: { id: number; name: string; slug: string } | null;
+  brand: { id: number; name: string; slug: string } | null;
+  is_active: boolean;
+  is_featured: boolean;
+  variant_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AdminProductCategoryReassignment {
+  id: number;
+  category: AdminCategoryProduct['category'];
+}
+
+export interface AdminCategoryProductParams {
+  category_id: number;
+  category_scope: "direct" | "tree";
+  search: string;
+  sort: "newest" | "name";
+  page: number;
+  per_page: number;
+}
 export type AdminRefundReturnStatus =
   | "not_required"
   | "awaiting_return"
