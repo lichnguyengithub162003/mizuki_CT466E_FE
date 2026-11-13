@@ -271,6 +271,33 @@ export interface ProductListingRequest {
   per_page: number;
 }
 
+export interface PublicBrandStorefrontDto {
+  id: number
+  name: string
+  slug: string
+  description: string | null
+  follower_count: number
+  logo_url: string | null
+  logo_rendition_url: string | null
+  banner_image: string | null
+  banner_rendition_url: string | null
+  mobile_banner_image?: string | null
+  supporting_image?: string | null
+  storefront: {
+    preset: 'editorial' | 'gallery'
+    intro: string | null
+    sections: Array<'story' | 'featured' | 'vouchers'>
+    assets?: { desktop_banner?: string | null; mobile_banner?: string | null; supporting_image?: string | null }
+  } | null
+  featured_products: Array<{ id: number; name: string; slug: string; image_url: string | null }>
+  promotions?: Array<{ id: number; name: string; code: string | null; discount_type: string; discount_value: number; ends_at: string | null }>
+}
+
+export async function getBrandStorefront(slug: string): Promise<PublicBrandStorefrontDto> {
+  const response = await apiClient.get<{ data: PublicBrandStorefrontDto }>(`/brands/${encodeURIComponent(slug)}`)
+  return response.data.data
+}
+
 export async function getProductListing(
   request: ProductListingRequest,
 ): Promise<ProductListingResponseDto> {

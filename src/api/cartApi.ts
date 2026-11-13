@@ -19,6 +19,8 @@ interface CartDto {
     readonly subtotal: number | string
     readonly available_quantity: number
     readonly stock_warning: boolean
+    readonly is_available?: boolean
+    readonly unavailable_reason?: string | null
   }[]
   readonly total_quantity: number
   readonly total_amount: number | string
@@ -35,6 +37,7 @@ function adaptCart(value: CartDto): CustomerCart {
       product: { id: item.product.id, name: item.product.name, slug: item.product.slug, imageUrl: item.product.primary_image_url ? resolveProductImage(item.product.primary_image_url) : undefined },
       variant: { id: item.variant.id, name: item.variant.name, sku: item.variant.sku, effectivePrice: numberValue(item.variant.effective_price) },
       quantity: item.quantity, subtotal: numberValue(item.subtotal), availableQuantity: item.available_quantity, stockWarning: item.stock_warning,
+      isAvailable: item.is_available ?? true, unavailableReason: item.unavailable_reason ?? null,
     })),
     totalQuantity: value.total_quantity, totalAmount: numberValue(value.total_amount), discountAmount: numberValue(value.discount_amount), totalAfterDiscount: numberValue(value.total_after_discount),
   }

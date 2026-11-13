@@ -22,6 +22,19 @@ beforeEach(() => { useAuthStore(pinia).resetForTesting(); useBranchPreferenceSto
 afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks() })
 
 describe('customer cart API integration', () => {
+  it('keeps a hidden-brand item visible but unavailable and removable', async () => {
+    login()
+    api.getCustomerCart.mockResolvedValueOnce({
+      ...structuredClone(cart), totalAmount: 0, discountAmount: 0, totalAfterDiscount: 0,
+      items: [{ ...structuredClone(cart.items[0]), isAvailable: false, unavailableReason: 'Thương hiệu tạm ngừng hoạt động; sản phẩm hiện không thể mua.' }],
+    })
+    const wrapper = await mountCart()
+    expect(wrapper.get('[data-unavailable-reason]').text()).toContain('Thương hiệu tạm ngừng hoạt động')
+    expect(wrapper.get('[data-cart-item] input[type="checkbox"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-summary-total]').text()).toContain('0')
+    await wrapper.get('button[aria-label^="Xóa"]').trigger('click')
+    expect(api.removeCartItem).toHaveBeenCalledWith(31)
+  })
   it('loads the authenticated server cart and backend totals', async () => { login(); const wrapper = await mountCart(); expect(api.getCustomerCart).toHaveBeenCalled(); expect(wrapper.get('[data-summary-count]').text()).toBe('2'); expect(wrapper.get('[data-summary-total]').text()).toContain('190.000') })
   it('renders the server empty cart after reload', async () => { login(); api.getCustomerCart.mockResolvedValueOnce({ ...structuredClone(cart), items: [], totalQuantity: 0, totalAmount: 0, totalAfterDiscount: 0 }); const wrapper = await mountCart(); expect(wrapper.find('[data-cart-empty]').exists()).toBe(true) })
   it('updates quantity and respects server availability controls', async () => { login(); api.updateCartItem.mockResolvedValueOnce({ ...structuredClone(cart), items: [{ ...cart.items[0], quantity: 3 }] }); const wrapper = await mountCart(); await wrapper.get('button[aria-label^="Tăng số lượng"]').trigger('click'); await flushPromises(); expect(api.updateCartItem).toHaveBeenCalledWith(31, 3); expect(wrapper.get('button[aria-label^="Tăng số lượng"]').attributes('disabled')).toBeDefined() })

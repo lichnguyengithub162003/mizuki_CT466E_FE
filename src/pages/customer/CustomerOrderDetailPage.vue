@@ -477,6 +477,19 @@ onBeforeUnmount(() => {
           >
             <div class="grid min-w-0 gap-4">
               <section
+                v-if="order.brandAttention"
+                class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+                role="status"
+                data-brand-order-attention
+              >
+                <h2 class="font-semibold">Thông tin thương hiệu trong đơn hàng</h2>
+                <p class="mt-1 leading-6">{{ order.brandAttention.notice }}</p>
+                <p class="mt-2 text-[0.8125rem]">
+                  Sản phẩm liên quan:
+                  {{ order.items.filter(item => order?.brandAttention?.affectedItemIds.includes(item.id)).map(item => item.productName).join(', ') }}
+                </p>
+              </section>
+              <section
                 v-if="isActive"
                 class="rounded-[1.6rem] bg-white p-5 shadow-[0_12px_36px_rgba(25,52,42,0.065)] ring-1 ring-black/[0.045]"
                 data-active-order-detail

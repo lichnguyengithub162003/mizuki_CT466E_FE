@@ -24,6 +24,11 @@ export function adaptCustomerOrder(
   value: CustomerOrderDetailDto,
 ): CustomerOrder {
   return {
+    brandAttention: value.brand_attention ? {
+      affectedItemIds: value.brand_attention.affected_item_ids,
+      requiresReview: value.brand_attention.requires_review,
+      notice: value.brand_attention.customer_notice,
+    } : null,
     id: value.id,
     orderNumber: value.order_number,
     status: value.status,

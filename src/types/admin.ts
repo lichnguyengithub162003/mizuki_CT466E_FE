@@ -217,6 +217,12 @@ export interface AdminStaffAssignmentPreflight {
 }
 
 export interface AdminOrderListRecord extends AdminRecord {
+  brand_attention?: {
+    affected_item_ids: number[];
+    requires_review: boolean;
+    customer_notice: string;
+    admin_notice: string;
+  } | null;
   order_number: string;
   status: string;
   status_label: string;

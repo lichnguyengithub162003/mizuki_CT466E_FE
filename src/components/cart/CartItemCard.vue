@@ -25,7 +25,7 @@ const currencyFormatter = new Intl.NumberFormat('vi-VN', {
   style: 'currency',
   currency: 'VND',
 })
-const unavailable = computed(() => props.item.stockWarning || props.item.availableQuantity <= 0)
+const unavailable = computed(() => props.item.isAvailable === false || props.item.stockWarning || props.item.availableQuantity <= 0)
 const atInventoryLimit = computed(() => props.item.quantity >= props.item.availableQuantity)
 </script>
 
@@ -53,7 +53,7 @@ const atInventoryLimit = computed(() => props.item.quantity >= props.item.availa
         </RouterLink>
         <p class="mt-0.5 text-[0.6875rem] text-text-secondary min-[85rem]:mt-1 min-[85rem]:text-caption">{{ props.item.variant.name }} <span aria-hidden="true" class="mx-1 text-primary-200">•</span> SKU: {{ props.item.variant.sku }}</p>
         <p class="mt-1.5 text-body-sm font-semibold text-[#bd443d] min-[85rem]:hidden">{{ currencyFormatter.format(props.item.variant.effectivePrice) }} <span class="font-normal text-text-muted">/ sp</span></p>
-        <div v-if="unavailable" class="mt-1.5 flex items-start gap-1.5 text-caption leading-4 text-[#8f3733]" role="status" data-unavailable-reason><AlertTriangle class="mt-0.5 size-3.5 flex-none" aria-hidden="true" /><span>Chỉ còn {{ props.item.availableQuantity }} sản phẩm tại chi nhánh.</span></div>
+        <div v-if="unavailable" class="mt-1.5 flex items-start gap-1.5 text-caption leading-4 text-[#8f3733]" role="status" data-unavailable-reason><AlertTriangle class="mt-0.5 size-3.5 flex-none" aria-hidden="true" /><span>{{ props.item.unavailableReason || `Chỉ còn ${props.item.availableQuantity} sản phẩm tại chi nhánh.` }}</span></div>
         <p v-else-if="atInventoryLimit" class="mt-1.5 flex items-center gap-1.5 text-caption text-[#78551d]" data-inventory-limit><AlertTriangle class="size-3.5 flex-none" aria-hidden="true" />Đã đạt số lượng tối đa.</p>
       </div>
 

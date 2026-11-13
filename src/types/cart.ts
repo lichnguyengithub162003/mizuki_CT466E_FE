@@ -26,6 +26,8 @@ export interface CustomerCartItem {
   readonly subtotal: number
   readonly availableQuantity: number
   readonly stockWarning: boolean
+  readonly isAvailable?: boolean
+  readonly unavailableReason?: string | null
 }
 
 export interface CustomerCart {

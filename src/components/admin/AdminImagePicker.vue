@@ -17,7 +17,7 @@ const props = withDefaults(defineProps<{
   error?: string
   required?: boolean
 }>(), { modelValue: null, label: 'Hình ảnh', error: '', required: false })
-const emit = defineEmits<{ 'update:modelValue': [value: AdminImageValue] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: AdminImageValue]; uploading: [value: boolean] }>()
 const input = ref<HTMLInputElement>()
 const preview = ref('')
 const uploading = ref(false)
@@ -40,6 +40,7 @@ async function select(event: Event): Promise<void> {
   clearPreview()
   preview.value = URL.createObjectURL(file)
   uploading.value = true
+  emit('uploading', true)
   try {
     const uploaded = await uploadAdminImage(file)
     emit('update:modelValue', {
@@ -53,6 +54,7 @@ async function select(event: Event): Promise<void> {
     localError.value = isApplicationError(error) ? error.validationErrors?.image?.[0] || error.message : 'Không thể tải ảnh lên.'
   } finally {
     uploading.value = false
+    emit('uploading', false)
     if (input.value) input.value.value = ''
   }
 }

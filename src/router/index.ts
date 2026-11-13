@@ -35,6 +35,11 @@ const routes: readonly RouteRecordRaw[] = [
         component: () => import('@/pages/admin/AdminOrdersListPage.vue'),
       },
       {
+        path: 'orders/:id',
+        name: 'admin-order-detail',
+        component: () => import('@/pages/admin/AdminOrderReviewPage.vue'),
+      },
+      {
         path: 'categories',
         name: 'admin-categories',
         component: () => import('@/pages/admin/AdminCategoriesListPage.vue'),
@@ -61,6 +66,28 @@ const routes: readonly RouteRecordRaw[] = [
         path: 'categories/:id',
         name: 'admin-category-detail',
         component: () => import('@/pages/admin/AdminCategoryDetailPage.vue'),
+      },
+      {
+        path: 'brands',
+        name: 'admin-brands',
+        component: () => import('@/pages/admin/AdminBrandsListPage.vue'),
+      },
+      {
+        path: 'brands/create',
+        name: 'admin-brand-create',
+        component: () => import('@/pages/admin/AdminBrandEditorPage.vue'),
+        meta: { requiresSuperAdmin: true },
+      },
+      {
+        path: 'brands/trash',
+        name: 'admin-brands-trash',
+        component: () => import('@/pages/admin/AdminBrandsTrashPage.vue'),
+        meta: { requiresSuperAdmin: true },
+      },
+      {
+        path: 'brands/:id',
+        name: 'admin-brand-detail',
+        component: () => import('@/pages/admin/AdminBrandDetailPage.vue'),
       },
       { path: 'refunds', name: 'admin-refunds', component: () => import('@/pages/admin/AdminRefundsListPage.vue') },
       {
@@ -171,6 +198,12 @@ const routes: readonly RouteRecordRaw[] = [
     path: ROUTE_PATHS.products,
     name: ROUTE_NAMES.products,
     component: () => import('@/pages/customer/ProductListingPage.vue'),
+    meta: { layout: 'customer' },
+  },
+  {
+    path: '/brand/:slug',
+    name: 'brand-storefront',
+    component: () => import('@/pages/customer/BrandStorefrontPage.vue'),
     meta: { layout: 'customer' },
   },
   {

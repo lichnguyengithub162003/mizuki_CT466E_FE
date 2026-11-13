@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), request: vi.fn(),
 vi.mock('@/api/clients', () => ({ apiClient: { get: mocks.get, post: mocks.post, request: mocks.request } }))
 vi.mock('@/api/csrf', () => ({ ensureCsrfCookie: mocks.csrf }))
 
-import { adjustInventory, createAdminRecord, deleteAdminCatalog, deleteAdminCategory, getAdminCategoryProducts, getAdminCategoryTrash, getAdminDetail, getAdminList, getAdminOrderCounts, getAdminRefundCounts, reassignAdminProductCategory, restoreAdminCategory, runAppointmentAction, runOrderAction, runRefundAction, updateAdminRecord, uploadAdminImage } from '@/api/adminApi'
+import { adjustInventory, createAdminRecord, deleteAdminCatalog, deleteAdminCategory, getAdminCategoryProducts, getAdminCategoryTrash, getAdminDetail, getAdminList, getAdminOrderCounts, getAdminRefundCounts, reassignAdminProductCategory, restoreAdminCategory, runAppointmentAction, runOrderAction, runRefundAction, updateAdminRecord, uploadAdminImage, getAdminBrands, getAdminBrandProducts, getAdminBrandTrash, deleteAdminBrand, restoreAdminBrand, getAdminBrandEvents, getAdminBrandStorefront, saveAdminBrandStorefrontDraft, publishAdminBrandStorefront, discardAdminBrandStorefrontDraft, setAdminBrandFeaturedProduct } from '@/api/adminApi'
 
 describe('admin API contracts', () => {
   beforeEach(() => {
@@ -13,6 +13,48 @@ describe('admin API contracts', () => {
     mocks.csrf.mockResolvedValue(undefined)
     mocks.request.mockResolvedValue({ data: { data: { id: 1 } } })
     mocks.post.mockResolvedValue({ data: { data: { upload_token: '123e4567-e89b-12d3-a456-426614174000', preview_url: 'https://res.cloudinary.com/mizuki/image/upload/staging/a.webp', mime_type: 'image/webp', size: 10 } } })
+  })
+
+  it('keeps Brand list filters, pagination and the API envelope authoritative', async () => {
+    const pagination = { current_page: 2, last_page: 3, per_page: 20, total: 44 }
+    mocks.get.mockResolvedValue({ data: { data: [{ id: 7, name: 'Mizuki' }], meta: { pagination } } })
+    await expect(getAdminBrands({ search: '  Mizuki  ', status: 'published', origin_country: 'VN', product_count_min: 0, sort: 'product_count', direction: 'desc', page: 2, per_page: 20 })).resolves.toEqual({ items: [{ id: 7, name: 'Mizuki' }], pagination })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/brands', { params: { search: 'Mizuki', status: 'published', origin_country: 'VN', product_count_min: 0, sort: 'product_count', direction: 'desc', page: 2, per_page: 20 } })
+  })
+
+  it('uses dedicated Brand trash, restore and delete contracts', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [], meta: { pagination: { current_page: 1, last_page: 1, per_page: 20, total: 0 } } } })
+    await getAdminBrandTrash({ search: '  thử  ', page: 1, per_page: 20 })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/brands/trash', { params: { search: 'thử', page: 1, per_page: 20 } })
+    await deleteAdminBrand(9, 'brand_and_products', 'Mizuki')
+    expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'delete', url: '/admin/brands/9', data: { mode: 'brand_and_products', confirm_name: 'Mizuki' } }))
+    await restoreAdminBrand(9, true)
+    expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'post', url: '/admin/brands/9/restore', data: { restore_products: true } }))
+  })
+
+  it('omits blank Brand Product search while preserving the Brand ID and pagination', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [], meta: { pagination: { current_page: 1, last_page: 1, per_page: 15, total: 0 } } } })
+    await getAdminBrandProducts(12, 1, '  ')
+    expect(mocks.get).toHaveBeenCalledWith('/admin/products', { params: { brand_id: 12, page: 1, per_page: 15, sort: 'newest' } })
+  })
+
+  it('uses dedicated featured, storefront and audit endpoints without exposing draft through public APIs', async () => {
+    mocks.get.mockResolvedValue({ data: { data: { published: null, draft: null } } })
+    await getAdminBrandStorefront(12)
+    expect(mocks.get).toHaveBeenCalledWith('/admin/brands/12/storefront')
+    await getAdminBrandStorefront(12, true)
+    expect(mocks.get).toHaveBeenCalledWith('/admin/brands/12/storefront', { params: { config_only: 1 } })
+    await getAdminBrandEvents(12, 2, 'updated')
+    expect(mocks.get).toHaveBeenCalledWith('/admin/brands/12/events', { params: { page: 2, per_page: 20, action: 'updated' } })
+    await setAdminBrandFeaturedProduct(12, 91, true)
+    expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'patch', url: '/admin/brands/12/featured-products/91', data: { featured: true } }))
+    const draft = { preset: 'editorial' as const, intro: 'Giới thiệu', sections: ['story' as const, 'featured' as const] }
+    await saveAdminBrandStorefrontDraft(12, draft)
+    expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'put', url: '/admin/brands/12/storefront/draft', data: draft }))
+    await publishAdminBrandStorefront(12)
+    expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'post', url: '/admin/brands/12/storefront/publish' }))
+    await discardAdminBrandStorefrontDraft(12)
+    expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({ method: 'delete', url: '/admin/brands/12/storefront/draft' }))
   })
 
   it('unwraps the paginated envelope and preserves snake_case meta', async () => {

@@ -3,6 +3,7 @@ import { ensureCsrfCookie } from "@/api/csrf";
 import { ENDPOINTS } from "@/constants/endpoints";
 import type { ApiResponse } from "@/types/api";
 import type { AdminCategoryCreateRequest, AdminCategoryListParams, AdminCategoryMutation, AdminCategoryPage, AdminCategoryRecord, AdminCategoryPagination } from "@/types/adminCategory";
+import type { AdminBrandDeletePreview, AdminBrandEventPage, AdminBrandListParams, AdminBrandMutation, AdminBrandPage, AdminBrandRecord, AdminBrandProduct, AdminBrandPromotionOptionPage, AdminBrandPromotionPage, AdminBrandStorefront, AdminBrandStorefrontDraftMutation, AdminBrandStorefrontConfig } from '@/types/adminBrand'
 import type {
   AdminListParams,
   AdminCategoryProduct,
@@ -194,6 +195,121 @@ export function updateAdminCategory(id: number | string, payload: AdminCategoryM
 
 export function deleteAdminCategory(id: number | string): Promise<unknown> {
   return mutate<unknown>('delete', ENDPOINTS.adminCategory(id));
+}
+
+export async function getAdminBrands(params: AdminBrandListParams): Promise<AdminBrandPage> {
+  const query = { ...params, ...(params.search?.trim() ? { search: params.search.trim() } : {}) }
+  if (!query.search) delete query.search
+  const response = await apiClient.get<ApiResponse<AdminBrandRecord[]> & { meta: { pagination: AdminBrandPage['pagination'] } }>(ENDPOINTS.adminBrands, { params: query })
+  const pagination = response.data.meta?.pagination
+  if (!pagination || !Number.isFinite(pagination.current_page) || !Number.isFinite(pagination.last_page)) throw new Error('Brand pagination metadata is missing')
+  return { items: response.data.data, pagination }
+}
+
+export async function getAdminBrandOriginCountries(): Promise<string[]> {
+  const response = await apiClient.get<ApiResponse<string[]>>(`${ENDPOINTS.adminBrands}/origin-countries`)
+  return response.data.data
+}
+
+export async function getAdminBrand(id: number | string): Promise<AdminBrandRecord> {
+  const response = await apiClient.get<ApiResponse<AdminBrandRecord>>(ENDPOINTS.adminBrand(id))
+  return response.data.data
+}
+
+export function createAdminBrand(payload: AdminBrandMutation): Promise<AdminBrandRecord> {
+  return mutate<AdminBrandRecord>('post', ENDPOINTS.adminBrands, payload)
+}
+
+export function updateAdminBrand(id: number, payload: AdminBrandMutation): Promise<AdminBrandRecord> {
+  return mutate<AdminBrandRecord>('patch', ENDPOINTS.adminBrand(id), payload)
+}
+
+export async function getAdminBrandDeletePreview(id: number): Promise<AdminBrandDeletePreview> {
+  const response = await apiClient.get<ApiResponse<AdminBrandDeletePreview>>(`${ENDPOINTS.adminBrand(id)}/delete-preview`)
+  return response.data.data
+}
+
+export function deleteAdminBrand(id: number, mode: 'brand_only' | 'brand_and_products', confirmName?: string): Promise<{ id: number; deleted_product_count: number }> {
+  return mutate('delete', ENDPOINTS.adminBrand(id), { mode, ...(confirmName ? { confirm_name: confirmName } : {}) })
+}
+
+export async function getAdminBrandTrash(params: { search?: string; page: number; per_page: number }): Promise<AdminBrandPage> {
+  const search = params.search?.trim()
+  const response = await apiClient.get<ApiResponse<AdminBrandRecord[]> & { meta: { pagination: AdminBrandPage['pagination'] } }>(
+    `${ENDPOINTS.adminBrands}/trash`, { params: { page: params.page, per_page: params.per_page, ...(search ? { search } : {}) } },
+  )
+  const pagination = response.data.meta?.pagination
+  if (!pagination || !Number.isFinite(pagination.current_page) || !Number.isFinite(pagination.last_page)) throw new Error('Brand Trash pagination metadata is missing')
+  return { items: response.data.data, pagination }
+}
+
+export function restoreAdminBrand(id: number, restoreProducts: boolean): Promise<{ brand: AdminBrandRecord; restored_product_count: number }> {
+  return mutate('post', `${ENDPOINTS.adminBrand(id)}/restore`, { restore_products: restoreProducts })
+}
+
+export async function getAdminBrandProducts(brandId: number, page: number, search = ''): Promise<AdminPage<AdminBrandProduct>> {
+  const keyword = search.trim()
+  const response = await apiClient.get<ApiResponse<AdminBrandProduct[]> & { meta: { pagination: AdminPage<AdminBrandProduct>['pagination'] } }>(
+    ENDPOINTS.adminProducts, { params: { brand_id: brandId, page, per_page: 15, sort: 'newest', ...(keyword ? { search: keyword } : {}) } },
+  )
+  const pagination = response.data.meta?.pagination
+  if (!pagination || !Number.isFinite(pagination.current_page) || !Number.isFinite(pagination.last_page)) throw new Error('Brand Product pagination metadata is missing')
+  return { items: response.data.data, pagination }
+}
+
+export function setAdminBrandFeaturedProduct(brandId: number, productId: number, featured: boolean): Promise<{ product_id: number; brand_featured_sort_order: number | null }> {
+  return mutate('patch', `${ENDPOINTS.adminBrand(brandId)}/featured-products/${productId}`, { featured })
+}
+
+export async function getAdminBrandEvents(brandId: number, page: number, action = ''): Promise<AdminBrandEventPage> {
+  const response = await apiClient.get<ApiResponse<AdminBrandEventPage>>(`${ENDPOINTS.adminBrand(brandId)}/events`, {
+    params: { page, per_page: 20, ...(action ? { action } : {}) },
+  })
+  return response.data.data
+}
+
+export async function getAdminBrandStorefront(brandId: number, configOnly = false): Promise<AdminBrandStorefront> {
+  const url = `${ENDPOINTS.adminBrand(brandId)}/storefront`
+  const response = configOnly
+    ? await apiClient.get<ApiResponse<AdminBrandStorefront>>(url, { params: { config_only: 1 } })
+    : await apiClient.get<ApiResponse<AdminBrandStorefront>>(url)
+  return response.data.data
+}
+
+export function saveAdminBrandStorefrontDraft(brandId: number, config: AdminBrandStorefrontDraftMutation): Promise<{ draft: AdminBrandStorefrontConfig }> {
+  return mutate('put', `${ENDPOINTS.adminBrand(brandId)}/storefront/draft`, config)
+}
+
+export function publishAdminBrandStorefront(brandId: number): Promise<{ published: AdminBrandStorefrontConfig }> {
+  return mutate('post', `${ENDPOINTS.adminBrand(brandId)}/storefront/publish`)
+}
+
+export function discardAdminBrandStorefrontDraft(brandId: number): Promise<{ draft: null }> {
+  return mutate('delete', `${ENDPOINTS.adminBrand(brandId)}/storefront/draft`)
+}
+
+export async function getAdminBrandPromotions(brandId: number, params: { search?: string; status?: string; page: number }): Promise<AdminBrandPromotionPage> {
+  const search = params.search?.trim()
+  const response = await apiClient.get<ApiResponse<AdminBrandPromotionPage>>(`${ENDPOINTS.adminBrand(brandId)}/promotions`, {
+    params: { page: params.page, per_page: 15, ...(search ? { search } : {}), ...(params.status ? { status: params.status } : {}) },
+  })
+  return response.data.data
+}
+
+export async function getAdminBrandPromotionOptions(search: string, page: number): Promise<AdminBrandPromotionOptionPage> {
+  const term = search.trim()
+  const response = await apiClient.get<ApiResponse<AdminBrandPromotionOptionPage>>(`${ENDPOINTS.adminBrands}/promotion-options`, {
+    params: { page, ...(term ? { search: term } : {}) },
+  })
+  return response.data.data
+}
+
+export function associateAdminBrandPromotion(brandId: number, promotionId: number, visible: boolean): Promise<{ promotion_id: number }> {
+  return mutate('put', `${ENDPOINTS.adminBrand(brandId)}/promotions/${promotionId}`, { show_on_storefront: visible })
+}
+
+export function dissociateAdminBrandPromotion(brandId: number, promotionId: number): Promise<{ promotion_id: number }> {
+  return mutate('delete', `${ENDPOINTS.adminBrand(brandId)}/promotions/${promotionId}`)
 }
 
 export async function getAdminDetail<T extends AdminRecord>(

@@ -280,6 +280,12 @@ export interface CustomerOrderRefundDto {
   readonly received_amount?: number | string | null;
 }
 export interface CustomerOrderDetailDto extends CustomerOrderDto {
+  readonly brand_attention?: {
+    readonly affected_item_ids: number[];
+    readonly requires_review: boolean;
+    readonly customer_notice: string;
+    readonly admin_notice: string;
+  } | null;
   readonly branch: CustomerOrderBranch;
   readonly delivery_address: CustomerOrderDeliveryAddress | null;
   readonly shipment: CustomerOrderShipmentDto | null;
@@ -387,6 +393,11 @@ export interface CustomerOrderPayment {
   readonly refundedAt: string | null;
 }
 export interface CustomerOrder {
+  readonly brandAttention?: {
+    readonly affectedItemIds: readonly number[];
+    readonly requiresReview: boolean;
+    readonly notice: string;
+  } | null;
   readonly id: number;
   readonly orderNumber: string;
   readonly status: CustomerOrderStatus;

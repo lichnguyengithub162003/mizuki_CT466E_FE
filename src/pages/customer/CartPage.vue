@@ -151,7 +151,7 @@ const eligibleItems = computed(() =>
   items.value.filter((item) => isSelectable(item)),
 );
 const hasStockWarning = computed(() =>
-  items.value.some((item) => item.stockWarning || item.availableQuantity <= 0),
+  items.value.some((item) => item.isAvailable === false || item.stockWarning || item.availableQuantity <= 0),
 );
 const selectedQuantity = computed(() =>
   eligibleItems.value.reduce(
@@ -262,7 +262,7 @@ watch(userId, () => {
 });
 
 function isSelectable(item: CustomerCartItem): boolean {
-  return !item.stockWarning && item.availableQuantity > 0;
+  return item.isAvailable !== false && !item.stockWarning && item.availableQuantity > 0;
 }
 
 function calculateVoucherDiscount(
